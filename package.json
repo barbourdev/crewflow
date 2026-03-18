@@ -1,0 +1,31 @@
+{
+  "name": "crewflow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Framework open source de orquestração multi-agente com interface web",
+  "license": "MIT",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test",
+    "db:push": "npm run db:push --workspace=@crewflow/web",
+    "db:seed": "npm run db:seed --workspace=@crewflow/web",
+    "db:studio": "npm run db:studio --workspace=@crewflow/web"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.2.1",
+    "postcss": "^8.5.8",
+    "tailwindcss": "^4.2.1",
+    "turbo": "^2"
+  },
+  "packageManager": "npm@10.9.0",
+  "engines": {
+    "node": ">=20"
+  }
+}

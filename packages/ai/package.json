@@ -1,0 +1,19 @@
+{
+  "name": "@crewflow/ai",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"No tests yet\""
+  },
+  "dependencies": {
+    "@crewflow/shared": "*",
+    "@anthropic-ai/sdk": "^0.39",
+    "openai": "^4"
+  },
+  "devDependencies": {
+    "typescript": "^5.7"
+  }
+}
