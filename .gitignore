@@ -38,5 +38,8 @@ coverage/
 *.log
 npm-debug.log*
 
+# Claude
+.claude/
+
 # Misc
 .vercel
