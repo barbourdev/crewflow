@@ -5,7 +5,9 @@ node_modules/
 
 # Build
 .next/
+**/.next/
 .turbo/
+**/.turbo/
 dist/
 out/
 build/

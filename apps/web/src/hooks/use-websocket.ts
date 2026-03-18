@@ -32,7 +32,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const wsRef = useRef<WebSocket | null>(null)
   const handlersRef = useRef<Map<string, Set<EventHandler>>>(new Map())
   const reconnectAttemptsRef = useRef(0)
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const [isConnected, setIsConnected] = useState(false)
 
   const getWsUrl = useCallback(() => {

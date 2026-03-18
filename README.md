@@ -88,12 +88,12 @@ crewflow/
 - [x] Schema do banco e dados iniciais
 - [x] Rotas da API ([documentação](docs/API.md))
 - [ ] Motor de execução de pipelines
-- [ ] WebSocket tempo real
-- [ ] Dashboard
-- [ ] Squad Builder
+- [x] WebSocket tempo real
+- [x] Dashboard
+- [x] Squad Builder
+- [x] Galeria de modelos
 - [ ] Run View com output ao vivo
-- [ ] Galeria de modelos
-- [ ] Sistema de integrações
+- [x] Sistema de integrações
 - [ ] UI de aprovações
 - [ ] i18n (PT-BR, EN, ES)
 - [ ] Execução paralela

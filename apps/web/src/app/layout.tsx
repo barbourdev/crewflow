@@ -1,19 +1,33 @@
 import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
+import { IBM_Plex_Sans, IBM_Plex_Mono } from 'next/font/google'
+import { TooltipProvider } from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
 import './globals.css'
 
-const inter = Inter({ subsets: ['latin'] })
+const plexSans = IBM_Plex_Sans({
+  subsets: ['latin'],
+  weight: ['300', '400', '500', '600', '700'],
+  variable: '--font-sans',
+})
+
+const plexMono = IBM_Plex_Mono({
+  subsets: ['latin'],
+  weight: ['400', '500'],
+  variable: '--font-mono',
+})
 
 export const metadata: Metadata = {
   title: 'CrewFlow',
-  description: 'Framework de orquestração multi-agente com interface web',
+  description: 'Multi-agent orchestration framework',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR" className="dark">
-      <body className={`${inter.className} bg-zinc-950 text-zinc-100 antialiased`}>
-        {children}
+    <html lang="pt-BR" className={cn('dark', plexSans.variable, plexMono.variable)} suppressHydrationWarning>
+      <body className="font-sans">
+        <TooltipProvider>
+          {children}
+        </TooltipProvider>
       </body>
     </html>
   )

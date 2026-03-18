@@ -5,19 +5,19 @@ import { ZodError } from 'zod'
 // Response Envelope
 // ============================================================================
 
-interface PaginationMeta {
+export interface PaginationMeta {
   page: number
   limit: number
   total: number
   totalPages: number
 }
 
-interface SuccessResponse<T> {
+export interface SuccessResponse<T> {
   data: T
   meta?: PaginationMeta
 }
 
-interface ErrorBody {
+export interface ErrorBody {
   error: {
     code: string
     message: string
