@@ -4,8 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
+    "dev:ws": "tsx --watch server.ts",
     "build": "next build",
-    "start": "next start",
+    "start": "tsx server.ts",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "echo \"No tests yet\"",
@@ -21,6 +22,7 @@
     "next": "^15",
     "react": "^19",
     "react-dom": "^19",
+    "ws": "^8.19.0",
     "zod": "^3.23",
     "zustand": "^5"
   },
@@ -29,6 +31,7 @@
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/ws": "^8.18.1",
     "eslint": "^9",
     "eslint-config-next": "^15",
     "postcss": "^8",
