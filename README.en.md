@@ -85,9 +85,9 @@ crewflow/
 
 - [x] Project specification
 - [x] Architecture documentation
-- [ ] Database schema and seed data
+- [x] Database schema and seed data
+- [x] API routes ([documentation](docs/API.md))
 - [ ] Pipeline execution engine
-- [ ] API routes
 - [ ] WebSocket real-time updates
 - [ ] Dashboard page
 - [ ] Squad Builder

@@ -85,9 +85,9 @@ crewflow/
 
 - [x] Especificação do projeto
 - [x] Documentação de arquitetura
-- [ ] Schema do banco e dados iniciais
+- [x] Schema do banco e dados iniciais
+- [x] Rotas da API ([documentação](docs/API.md))
 - [ ] Motor de execução de pipelines
-- [ ] Rotas da API
 - [ ] WebSocket tempo real
 - [ ] Dashboard
 - [ ] Squad Builder
