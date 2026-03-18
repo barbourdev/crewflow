@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/db'
-import { success, notFound, badRequest, handleError } from '@/lib/api-response'
-import { checkpointResponseSchema } from '@crewflow/shared'
+import { success, notFound, handleError } from '@/lib/api-response'
+import { wsServer } from '@/lib/ws-server'
 
 export async function POST(
   request: NextRequest,
@@ -9,44 +9,24 @@ export async function POST(
 ) {
   try {
     const { id } = await params
-    const body = await request.json()
-    const data = checkpointResponseSchema.parse(body)
+    const body = await request.json() as {
+      runStepId: string
+      action: 'approve' | 'adjust' | 'redo'
+      feedback?: string
+    }
 
     const run = await prisma.run.findUnique({ where: { id } })
     if (!run) return notFound('Run')
 
-    if (run.status !== 'paused') {
-      return badRequest('Run is not paused at a checkpoint')
-    }
-
-    const runStep = await prisma.runStep.findFirst({
-      where: { runId: id, stepId: data.stepId },
+    // Resolver o checkpoint pendente no WS server (desbloqueia o pipeline runner)
+    wsServer.resolveCheckpoint(body.runStepId, {
+      runId: id,
+      runStepId: body.runStepId,
+      action: body.action,
+      feedback: body.feedback,
     })
 
-    if (!runStep) return notFound('RunStep')
-
-    await prisma.runStep.update({
-      where: { id: runStep.id },
-      data: {
-        output: JSON.stringify({
-          checkpointAction: data.action,
-          checkpointFeedback: data.feedback,
-        }),
-      },
-    })
-
-    const updatedRun = await prisma.run.update({
-      where: { id },
-      data: { status: 'running' },
-      include: {
-        steps: {
-          orderBy: { createdAt: 'asc' },
-          include: { step: true },
-        },
-      },
-    })
-
-    return success(updatedRun)
+    return success({ ok: true })
   } catch (err) {
     return handleError(err)
   }

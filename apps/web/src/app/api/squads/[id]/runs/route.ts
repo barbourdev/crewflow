@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/db'
 import { paginated, created, notFound, handleError, parsePagination } from '@/lib/api-response'
+import { executeRun } from '@/lib/run-executor'
 
 export async function GET(
   request: NextRequest,
@@ -93,6 +94,13 @@ export async function POST(
         },
       })
     })
+
+    // Disparar execução em background (não bloqueia a response)
+    if (run) {
+      executeRun(run.id).catch((err) => {
+        console.error(`[Run ${run!.id}] Erro na execução:`, err)
+      })
+    }
 
     return created(run)
   } catch (err) {

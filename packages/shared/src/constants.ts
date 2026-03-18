@@ -16,6 +16,7 @@ export const RUN_STATUS = {
   PAUSED: 'paused',
   COMPLETED: 'completed',
   FAILED: 'failed',
+  CANCELLED: 'cancelled',
 } as const
 
 export const STEP_EXECUTION = {

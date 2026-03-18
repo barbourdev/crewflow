@@ -41,6 +41,7 @@ model Squad {
   version     String   @default("1.0.0")
   userId      String
   config      String   @default("{}") // JSON: { defaultModel, temperature, maxRetries, maxTokensPerStep, maxCostPerRun }
+  memories    String   @default("[]") // JSON array: learnings de runs anteriores
   isTemplate  Boolean  @default(false)
   isArchived  Boolean  @default(false)
   createdAt   DateTime @default(now())

@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/db'
 import { success, notFound, badRequest, handleError } from '@/lib/api-response'
+import { getActiveRunner } from '@/lib/run-executor'
 
 export async function POST(
   _request: NextRequest,
@@ -15,6 +16,10 @@ export async function POST(
     if (run.status !== 'running') {
       return badRequest('Only running runs can be paused')
     }
+
+    // Pausar o runner ativo
+    const runner = getActiveRunner(id)
+    if (runner) runner.pause()
 
     const updated = await prisma.run.update({
       where: { id },

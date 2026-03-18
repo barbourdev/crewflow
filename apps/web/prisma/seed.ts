@@ -152,7 +152,10 @@ async function main() {
     data: { squadId: squad.id },
   })
 
-  const agents = await prisma.agent.findMany({ where: { squadId: squad.id } })
+  const agents = await prisma.agent.findMany({
+    where: { squadId: squad.id },
+    orderBy: { createdAt: 'asc' },
+  })
 
   await prisma.step.createMany({
     data: [
@@ -163,6 +166,14 @@ async function main() {
       { pipelineId: pipeline.id, agentId: agents[2]!.id, order: 4, label: 'Review quality', type: 'inline', onReject: 'retry' },
     ],
   })
+
+  // Associar skills aos agentes do example squad
+  const apifySkill = await prisma.skill.findUnique({ where: { name: 'apify' } })
+  if (apifySkill && agents[0]) {
+    await prisma.agentSkill.create({
+      data: { agentId: agents[0].id, skillId: apifySkill.id },
+    })
+  }
 
   console.log('🚀 Example squad created')
   console.log('')

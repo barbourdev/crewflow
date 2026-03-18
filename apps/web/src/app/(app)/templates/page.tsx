@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   Clock,
   DollarSign,
@@ -9,6 +10,7 @@ import {
   FileText,
   Code,
   AlertCircle,
+  Loader2,
 } from 'lucide-react'
 import {
   Card,
@@ -79,10 +81,30 @@ function TemplateCardSkeleton() {
 // ---------------------------------------------------------------------------
 
 export default function TemplatesPage() {
+  const router = useRouter()
   const [templates, setTemplates] = useState<Template[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [category, setCategory] = useState<CategoryFilter>('all')
+  const [creatingId, setCreatingId] = useState<string | null>(null)
+
+  const handleUseTemplate = useCallback(async (templateId: string) => {
+    if (creatingId) return
+    setCreatingId(templateId)
+    try {
+      const res = await fetch(`/api/templates/${templateId}/use`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      if (!res.ok) throw new Error('Falha ao criar squad')
+      const json = (await res.json()) as { data: { id: string } }
+      router.push(`/squads/${json.data.id}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao criar squad')
+      setCreatingId(null)
+    }
+  }, [creatingId, router])
 
   useEffect(() => {
     async function fetchTemplates() {
@@ -197,11 +219,13 @@ export default function TemplatesPage() {
                                 variant="outline"
                                 size="sm"
                                 className="w-full border-amber/30 text-amber hover:bg-amber/10"
-                                render={
-                                  <Link href={`/squads/new?template=${template.id}`} />
-                                }
+                                onClick={() => handleUseTemplate(template.id)}
+                                disabled={creatingId !== null}
                               >
-                                Use Template
+                                {creatingId === template.id ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : null}
+                                {creatingId === template.id ? 'Criando...' : 'Use Template'}
                               </Button>
                             </div>
                           </CardContent>

@@ -17,6 +17,7 @@ class CrewFlowWSServer {
   private clients: Map<string, ConnectedClient> = new Map()
   private checkpointResolvers: Map<string, (response: CheckpointResponsePayload) => void> =
     new Map()
+  private pendingCheckpoints: Map<string, WSMessage> = new Map() // runId -> checkpoint request message
   private clientIdCounter = 0
 
   initialize(server: import('http').Server) {
@@ -27,6 +28,7 @@ class CrewFlowWSServer {
     this.wss.on('connection', (ws: WebSocket, _req: IncomingMessage) => {
       const clientId = `client_${++this.clientIdCounter}`
       this.clients.set(clientId, { ws, subscribedRuns: new Set() })
+      console.log(`🔌 WS client connected: ${clientId} (total: ${this.clients.size})`)
 
       this.sendTo(ws, { event: WS_EVENTS.CONNECTED, payload: { clientId } })
 
@@ -66,6 +68,11 @@ class CrewFlowWSServer {
       case WS_CLIENT_EVENTS.SUBSCRIBE_RUN: {
         const { runId } = message.payload as { runId: string }
         client.subscribedRuns.add(runId)
+        // Enviar checkpoint pendente se existir
+        const pendingCheckpoint = this.pendingCheckpoints.get(runId)
+        if (pendingCheckpoint && client.ws.readyState === WebSocket.OPEN) {
+          this.sendTo(client.ws, pendingCheckpoint)
+        }
         break
       }
       case WS_CLIENT_EVENTS.UNSUBSCRIBE_RUN: {
@@ -75,6 +82,8 @@ class CrewFlowWSServer {
       }
       case WS_CLIENT_EVENTS.CHECKPOINT_RESPONSE: {
         const payload = message.payload as CheckpointResponsePayload
+        // Limpar checkpoint pendente
+        this.pendingCheckpoints.delete(payload.runId)
         const resolver = this.checkpointResolvers.get(payload.runStepId)
         if (resolver) {
           resolver(payload)
@@ -117,6 +126,18 @@ class CrewFlowWSServer {
     return new Promise((resolve) => {
       this.checkpointResolvers.set(runStepId, resolve)
     })
+  }
+
+  resolveCheckpoint(runStepId: string, response: CheckpointResponsePayload): boolean {
+    // Limpar checkpoint pendente
+    this.pendingCheckpoints.delete(response.runId)
+    const resolver = this.checkpointResolvers.get(runStepId)
+    if (resolver) {
+      resolver(response)
+      this.checkpointResolvers.delete(runStepId)
+      return true
+    }
+    return false
   }
 
   // ==========================================================================
@@ -206,10 +227,13 @@ class CrewFlowWSServer {
     stepLabel: string,
     previousOutput: string,
   ) {
-    this.broadcastToRun(runId, {
+    const message: WSMessage = {
       event: WS_EVENTS.CHECKPOINT_REQUEST,
       payload: { runId, runStepId, stepLabel, previousOutput },
-    })
+    }
+    // Guardar como pendente para enviar a novos subscribers
+    this.pendingCheckpoints.set(runId, message)
+    this.broadcastToRun(runId, message)
   }
 
   emitRunMetrics(
@@ -247,10 +271,26 @@ class CrewFlowWSServer {
     return this.clients.size
   }
 
+  getRunSubscriberCount(runId: string): number {
+    let count = 0
+    for (const client of this.clients.values()) {
+      if (client.subscribedRuns.has(runId)) count++
+    }
+    return count
+  }
+
   isInitialized(): boolean {
     return this.wss !== null
   }
 }
 
-// Singleton
-export const wsServer = new CrewFlowWSServer()
+// Singleton via globalThis (evita instâncias duplicadas no Next.js dev mode)
+const globalForWs = globalThis as unknown as {
+  wsServer: CrewFlowWSServer | undefined
+}
+
+export const wsServer = globalForWs.wsServer ?? new CrewFlowWSServer()
+
+if (process.env.NODE_ENV !== 'production') {
+  globalForWs.wsServer = wsServer
+}

@@ -1,7 +1,8 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   Play,
   Bot,
@@ -18,6 +19,7 @@ import {
   CircleDot,
   ShieldCheck,
   Coins,
+  Trash2,
 } from 'lucide-react'
 import {
   Card,
@@ -31,6 +33,15 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Dialog,
+  DialogTrigger,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
 import { AppHeader } from '@/components/layout/app-header'
 
 // ---------------------------------------------------------------------------
@@ -353,9 +364,40 @@ export default function SquadDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = React.use(params)
+  const router = useRouter()
   const [squad, setSquad] = useState<SquadDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [startingRun, setStartingRun] = useState(false)
+  const [runDialogOpen, setRunDialogOpen] = useState(false)
+  const [runInput, setRunInput] = useState('')
+
+  const handleDelete = useCallback(async () => {
+    if (!confirm('Tem certeza que deseja excluir este squad?')) return
+    try {
+      const res = await fetch(`/api/squads/${id}`, { method: 'DELETE' })
+      if (res.ok) router.push('/squads')
+    } catch { /* ignore */ }
+  }, [id, router])
+
+  const handleStartRun = useCallback(async () => {
+    if (startingRun) return
+    setStartingRun(true)
+    try {
+      const res = await fetch(`/api/squads/${id}/runs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input: { prompt: runInput.trim() } }),
+      })
+      if (!res.ok) throw new Error('Falha ao criar run')
+      const json = (await res.json()) as { data: { id: string } }
+      setRunDialogOpen(false)
+      setRunInput('')
+      router.push(`/squads/${id}/runs/${json.data.id}`)
+    } catch {
+      setStartingRun(false)
+    }
+  }, [id, startingRun, runInput, router])
 
   useEffect(() => {
     async function fetchSquad() {
@@ -420,10 +462,53 @@ export default function SquadDetailPage({
               <ArrowLeft className="h-3.5 w-3.5" />
               Back
             </Button>
-            <Button size="sm" className="bg-amber text-black hover:bg-amber/90">
-              <Play className="h-3.5 w-3.5" />
-              Run
+            <Button variant="ghost" size="icon-sm" onClick={handleDelete} className="text-muted-foreground hover:text-destructive">
+              <Trash2 className="h-3.5 w-3.5" />
             </Button>
+            <Dialog open={runDialogOpen} onOpenChange={setRunDialogOpen}>
+              <DialogTrigger render={
+                <Button size="sm" className="bg-amber text-black hover:bg-amber/90">
+                  <Play className="h-3.5 w-3.5" />
+                  Run
+                </Button>
+              } />
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Iniciar Run</DialogTitle>
+                  <DialogDescription>
+                    Descreva o que você quer que o squad produza.
+                  </DialogDescription>
+                </DialogHeader>
+                <textarea
+                  value={runInput}
+                  onChange={(e) => setRunInput(e.target.value)}
+                  placeholder="Ex: Escreva um artigo sobre inteligência artificial para iniciantes..."
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-amber focus:outline-none"
+                  rows={4}
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                      handleStartRun()
+                    }
+                  }}
+                />
+                <DialogFooter>
+                  <Button
+                    size="sm"
+                    className="bg-amber text-black hover:bg-amber/90"
+                    onClick={handleStartRun}
+                    disabled={startingRun}
+                  >
+                    {startingRun ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Play className="h-3.5 w-3.5" />
+                    )}
+                    {startingRun ? 'Iniciando...' : 'Executar'}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
         }
       />

@@ -41,6 +41,7 @@ export async function POST(
       role: string
       icon?: string
       persona?: Record<string, unknown>
+      skills?: string[]
       model?: string
       temperature?: number
       maxTokens?: number
@@ -78,6 +79,7 @@ export async function POST(
       })
 
       const agentIdMap: string[] = []
+      const agentSkillNames: Map<string, string[]> = new Map()
 
       for (const agentDef of templateAgents) {
         const agent = await tx.agent.create({
@@ -97,6 +99,33 @@ export async function POST(
           },
         })
         agentIdMap.push(agent.id)
+        if (agentDef.skills && agentDef.skills.length > 0) {
+          agentSkillNames.set(agent.id, agentDef.skills)
+        }
+      }
+
+      // Associar skills aos agentes
+      if (agentSkillNames.size > 0) {
+        const allSkillNames = new Set<string>()
+        for (const names of agentSkillNames.values()) {
+          for (const n of names) allSkillNames.add(n)
+        }
+
+        const skills = await tx.skill.findMany({
+          where: { name: { in: [...allSkillNames] } },
+        })
+        const skillByName = new Map(skills.map((s) => [s.name, s.id]))
+
+        for (const [agentId, skillNames] of agentSkillNames) {
+          for (const skillName of skillNames) {
+            const skillId = skillByName.get(skillName)
+            if (skillId) {
+              await tx.agentSkill.create({
+                data: { agentId, skillId },
+              })
+            }
+          }
+        }
       }
 
       const pipeline = await tx.pipeline.create({
@@ -109,12 +138,13 @@ export async function POST(
       })
 
       if (templatePipeline.steps) {
-        for (const stepDef of templatePipeline.steps) {
+        for (let idx = 0; idx < templatePipeline.steps.length; idx++) {
+          const stepDef = templatePipeline.steps[idx]!
           await tx.step.create({
             data: {
               pipelineId: pipeline.id,
-              agentId: agentIdMap[stepDef.agentIndex] ?? null,
-              order: stepDef.order,
+              agentId: stepDef.agentIndex != null ? (agentIdMap[stepDef.agentIndex] ?? null) : null,
+              order: stepDef.order ?? idx,
               label: stepDef.label,
               type: stepDef.type ?? 'inline',
               inputConfig: stepDef.inputConfig

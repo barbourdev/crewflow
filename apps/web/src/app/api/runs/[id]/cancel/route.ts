@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/db'
 import { success, notFound, badRequest, handleError } from '@/lib/api-response'
+import { getActiveRunner } from '@/lib/run-executor'
 
 export async function POST(
   _request: NextRequest,
@@ -15,6 +16,10 @@ export async function POST(
     if (run.status === 'completed' || run.status === 'cancelled') {
       return badRequest('Run is already finished or cancelled')
     }
+
+    // Cancelar o runner ativo
+    const runner = getActiveRunner(id)
+    if (runner) runner.cancel()
 
     const updated = await prisma.$transaction(async (tx) => {
       await tx.runStep.updateMany({
