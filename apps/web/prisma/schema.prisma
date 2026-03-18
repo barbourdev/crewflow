@@ -1,0 +1,279 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// USER
+// ============================================================================
+
+model User {
+  id          String   @id @default(cuid())
+  email       String?  @unique
+  name        String
+  avatar      String?
+  role        String   @default("admin") // admin | user
+  apiKeys     String?  // JSON criptografado: { anthropic: "...", openai: "..." }
+  preferences String   @default("{}") // JSON: { theme, language, advancedMode, defaultModel, currency }
+  language    String   @default("pt-BR")
+  currency    String   @default("USD")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  squads Squad[]
+  runs   Run[]
+}
+
+// ============================================================================
+// SQUAD
+// ============================================================================
+
+model Squad {
+  id          String   @id @default(cuid())
+  name        String
+  code        String   @unique
+  icon        String?
+  description String?
+  version     String   @default("1.0.0")
+  userId      String
+  config      String   @default("{}") // JSON: { defaultModel, temperature, maxRetries, maxTokensPerStep, maxCostPerRun }
+  isTemplate  Boolean  @default(false)
+  isArchived  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id])
+  agents   Agent[]
+  pipeline Pipeline?
+  runs     Run[]
+
+  @@index([userId])
+  @@index([isTemplate])
+}
+
+// ============================================================================
+// AGENT
+// ============================================================================
+
+model Agent {
+  id          String   @id @default(cuid())
+  squadId     String
+  name        String
+  icon        String?
+  role        String
+  persona     String   @default("{}") // JSON completo da persona
+  model       String?
+  temperature Float?
+  maxTokens   Int?
+  positionCol Int      @default(0)
+  positionRow Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  squad    Squad        @relation(fields: [squadId], references: [id], onDelete: Cascade)
+  skills   AgentSkill[]
+  steps    Step[]
+  runSteps RunStep[]
+
+  @@index([squadId])
+}
+
+// ============================================================================
+// PIPELINE
+// ============================================================================
+
+model Pipeline {
+  id        String   @id @default(cuid())
+  squadId   String   @unique
+  config    String   @default("{}") // JSON: { maxDuration, maxCost, onTimeout }
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  squad Squad  @relation(fields: [squadId], references: [id], onDelete: Cascade)
+  steps Step[]
+}
+
+// ============================================================================
+// STEP
+// ============================================================================
+
+model Step {
+  id             String   @id @default(cuid())
+  pipelineId     String
+  agentId        String?
+  order          Int
+  label          String
+  type           String   @default("inline") // inline | subagent | checkpoint
+  inputConfig    String   @default("{}") // JSON
+  outputConfig   String   @default("{}") // JSON
+  vetoConditions String   @default("[]") // JSON array
+  format         String   @default("markdown")
+  onReject       String   @default("retry") // retry | revise | abort | skip
+  maxRetries     Int      @default(3)
+  parallelGroup  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  pipeline Pipeline  @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  agent    Agent?    @relation(fields: [agentId], references: [id])
+  runSteps RunStep[]
+
+  @@index([pipelineId])
+  @@index([agentId])
+}
+
+// ============================================================================
+// SKILL
+// ============================================================================
+
+model Skill {
+  id             String   @id @default(cuid())
+  name           String   @unique
+  type           String // mcp | script | prompt | hybrid
+  description    String
+  version        String   @default("1.0.0")
+  icon           String?
+  config         String   @default("{}") // JSON
+  implementation String?
+  isBuiltin      Boolean  @default(false)
+  isPublic       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  agents AgentSkill[]
+}
+
+// ============================================================================
+// AGENT <-> SKILL (many-to-many)
+// ============================================================================
+
+model AgentSkill {
+  agentId    String
+  skillId    String
+  config     String   @default("{}") // JSON
+  assignedAt DateTime @default(now())
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  skill Skill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([agentId, skillId])
+}
+
+// ============================================================================
+// RUN
+// ============================================================================
+
+model Run {
+  id          String    @id @default(cuid())
+  squadId     String
+  userId      String
+  status      String    @default("queued") // queued | running | paused | completed | failed | cancelled
+  input       String    @default("{}") // JSON
+  totalTokens Int       @default(0)
+  totalCost   Float     @default(0)
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  squad Squad     @relation(fields: [squadId], references: [id])
+  user  User      @relation(fields: [userId], references: [id])
+  steps RunStep[]
+
+  @@index([squadId])
+  @@index([userId])
+  @@index([status])
+}
+
+// ============================================================================
+// RUN STEP
+// ============================================================================
+
+model RunStep {
+  id          String    @id @default(cuid())
+  runId       String
+  stepId      String
+  agentId     String?
+  status      String    @default("pending") // pending | running | completed | failed | skipped
+  input       String?   // conteudo de entrada
+  output      String?   // conteudo de saida
+  tokensUsed  Int       @default(0)
+  cost        Float     @default(0)
+  attempts    Int       @default(0)
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  run   Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  step  Step     @relation(fields: [stepId], references: [id])
+  agent Agent?   @relation(fields: [agentId], references: [id])
+  logs  RunLog[]
+
+  @@index([runId])
+  @@index([stepId])
+}
+
+// ============================================================================
+// RUN LOG
+// ============================================================================
+
+model RunLog {
+  id        String   @id @default(cuid())
+  runStepId String
+  level     String   @default("info") // info | warn | error | debug
+  message   String
+  metadata  String   @default("{}") // JSON
+  timestamp DateTime @default(now())
+
+  runStep RunStep @relation(fields: [runStepId], references: [id], onDelete: Cascade)
+
+  @@index([runStepId])
+  @@index([level])
+}
+
+// ============================================================================
+// BEST PRACTICE
+// ============================================================================
+
+model BestPractice {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  category    String // platform | discipline
+  platform    String? // instagram | linkedin | twitter | youtube | blog | email | whatsapp
+  contentType String? // feed | reels | stories | post | article | thread | script | shorts | newsletter | sales | broadcast | seo
+  description String
+  constraints String   @default("{}") // JSON
+  content     String // markdown
+  version     String   @default("1.0.0")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([category])
+  @@index([platform])
+}
+
+// ============================================================================
+// SQUAD TEMPLATE
+// ============================================================================
+
+model SquadTemplate {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  category      String // content | development | marketing | analysis
+  description   String
+  icon          String?
+  config        String   @default("{}") // JSON: configuracao completa do squad
+  agents        String   @default("[]") // JSON: array de definicoes de agentes
+  pipeline      String   @default("{}") // JSON: definicao do pipeline
+  estimatedTime String? // ex: "3-5 min"
+  estimatedCost String? // ex: "$0.50-1.50"
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([category])
+}
