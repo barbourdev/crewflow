@@ -37,6 +37,7 @@ model Squad {
   name        String
   code        String   @unique
   icon        String?
+  gradient    String?  // CSS gradient for squad card banner, e.g. "from-blue-500/20 to-purple-500/10"
   description String?
   version     String   @default("1.0.0")
   userId      String

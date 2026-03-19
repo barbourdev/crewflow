@@ -8,7 +8,7 @@ export async function GET() {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
-    const [totalSquads, runsToday, costToday, recentRuns] = await Promise.all([
+    const [totalSquads, runsToday, costToday, recentRuns, activeRuns, healthStats] = await Promise.all([
       prisma.squad.count({
         where: { userId: user.id, isArchived: false },
       }),
@@ -36,12 +36,34 @@ export async function GET() {
           squad: { select: { id: true, name: true, icon: true } },
         },
       }),
+
+      prisma.run.count({
+        where: {
+          userId: user.id,
+          status: 'running',
+        },
+      }),
+
+      // System Health: taxa de sucesso dos ultimos 100 runs
+      prisma.run.groupBy({
+        by: ['status'],
+        where: { userId: user.id },
+        _count: true,
+        orderBy: { _count: { status: 'desc' } },
+      }),
     ])
+
+    // Calcular System Health
+    const totalRuns = healthStats.reduce((sum, s) => sum + s._count, 0)
+    const completedRuns = healthStats.find((s) => s.status === 'completed')?._count ?? 0
+    const systemHealth = totalRuns > 0 ? Math.round((completedRuns / totalRuns) * 1000) / 10 : 100
 
     return success({
       totalSquads,
       runsToday,
       costToday: costToday._sum.totalCost ?? 0,
+      activeRuns,
+      systemHealth,
       recentRuns,
     })
   } catch (err) {
