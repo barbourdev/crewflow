@@ -4,6 +4,17 @@ import { AgentExecutor } from './agent-executor'
 import { HandoffManager } from './handoff-manager'
 import { VetoChecker } from './veto-checker'
 import { CheckpointHandler, type CheckpointResponse } from './checkpoint-handler'
+import { analyzeOutput } from './output-analyzer'
+
+export interface HumanInputRequest {
+  stepId: string
+  agentName: string
+  output: string
+}
+
+export interface HumanInputResponse {
+  message: string
+}
 
 export interface PipelineCallbacks {
   onStepStart?: (step: StepDefinition) => void
@@ -14,6 +25,10 @@ export interface PipelineCallbacks {
   onHandoff?: (fromAgentId: string, toAgentId: string) => void
   onCheckpoint?: (step: StepDefinition, previousOutput: string) => Promise<CheckpointResponse>
   onVetoFail?: (step: StepDefinition, violations: string[]) => void
+  /** Chamado quando o agente faz uma pergunta e espera resposta do usuario */
+  onHumanInputRequest?: (request: HumanInputRequest) => Promise<HumanInputResponse>
+  /** Chamado quando um agente de review rejeita o output - permite usuario decidir */
+  onReviewReject?: (step: StepDefinition, output: string, reason: string) => Promise<CheckpointResponse>
 }
 
 export interface PipelineContext {
@@ -98,7 +113,6 @@ export class PipelineRunner {
           }
 
           if (response.action === 'redo') {
-            // Voltar para o step indicado em onReject ou o último agente
             const targetLabel = step.onReject
             const targetIndex = targetLabel
               ? sortedSteps.findIndex((s) => s.label === targetLabel || s.id === targetLabel)
@@ -107,10 +121,8 @@ export class PipelineRunner {
             if (targetIndex >= 0) {
               this.callbacks.onStepComplete?.(step, `Rejeitado — voltando para "${sortedSteps[targetIndex]!.label}"`, { input: 0, output: 0, total: 0 }, 0)
 
-              // Injetar feedback no contexto para o agente que vai refazer
               if (response.feedback) {
-                const currentInput = context.input
-                context.input = `${currentInput}\n\n--- FEEDBACK DA REVISÃO ---\n${response.feedback}\n\nRefaça levando em conta o feedback acima.`
+                context.input = `${context.input}\n\n--- FEEDBACK DA REVISÃO ---\n${response.feedback}\n\nRefaça levando em conta o feedback acima.`
               }
 
               i = targetIndex
@@ -118,10 +130,8 @@ export class PipelineRunner {
             }
           }
 
-          // adjust — segue com feedback registrado
           this.callbacks.onStepComplete?.(step, `Ajustado: ${response.feedback ?? ''}`, { input: 0, output: 0, total: 0 }, 0)
         } else {
-          // Sem handler de checkpoint — auto-aprova
           this.callbacks.onStepComplete?.(step, 'Auto-aprovado', { input: 0, output: 0, total: 0 }, 0)
         }
 
@@ -146,11 +156,10 @@ export class PipelineRunner {
       if (lastOutput && lastAgentStepId) {
         const prevStep = sortedSteps.find((s) => s.id === lastAgentStepId)
         if (prevStep && prevStep.agentId !== step.agentId) {
-          const prevAgent = context.agents.get(prevStep.agentId)
           this.callbacks.onHandoff?.(prevStep.agentId, step.agentId)
           await this.handoffManager.handoff(
             prevStep.agentId,
-            prevAgent?.name ?? 'Unknown',
+            agent.name,
             step.agentId,
             lastOutput,
           )
@@ -158,6 +167,8 @@ export class PipelineRunner {
       }
 
       try {
+        console.log(`[ENGINE] Step ${i}/${sortedSteps.length}: executing agent "${agent.name}" for "${step.label}"`)
+
         const result = await this.agentExecutor.execute(agent, context.input, {
           provider: context.provider,
           previousOutput: lastOutput,
@@ -167,6 +178,8 @@ export class PipelineRunner {
           onStream: (chunk) => this.callbacks.onStepOutput?.(step, chunk),
         })
 
+        console.log(`[ENGINE] Step ${i}: agent "${agent.name}" completed. Output length: ${result.content.length}, tokens: ${result.tokensUsed.total}`)
+
         // Veto check
         if (step.vetoConditions && step.vetoConditions.length > 0) {
           const vetoResult = await this.vetoChecker.check(result.content, step.vetoConditions)
@@ -175,6 +188,23 @@ export class PipelineRunner {
           }
         }
 
+        // ============================================================
+        // ANALYZE OUTPUT — detectar perguntas e rejeicoes
+        // DESABILITADO: regex gera falsos positivos. Sera substituido
+        // por system prompt com marcador [HUMAN_INPUT_REQUIRED]
+        // ============================================================
+        // const analysis = analyzeOutput(result.content)
+        // console.log(`[ENGINE] Step ${i}: output analysis - needsHumanInput: ${analysis.needsHumanInput}, isRejection: ${analysis.isRejection}`)
+
+        // TODO: Caso 1 - Agente fez pergunta ao usuario (desabilitado - regex gera falsos positivos)
+        // Sera reabilitado com system prompt + marcador [HUMAN_INPUT_REQUIRED]
+        // Infraestrutura pronta: onHumanInputRequest callback, WS events, terminal inline input
+
+        // TODO: Caso 2 - Agente de review rejeitou (desabilitado - regex gera falsos positivos)
+        // Sera reabilitado com system prompt + marcador [REVIEW_REJECT]
+        // Infraestrutura pronta: onReviewReject callback, WS events, terminal inline buttons
+
+        // Caso normal - step completo sem interacao
         outputs.set(step.id, result.content)
         lastOutput = result.content
         lastAgentStepId = step.id
@@ -186,6 +216,7 @@ export class PipelineRunner {
         this.callbacks.onStepComplete?.(step, result.content, result.tokensUsed, result.cost)
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err))
+        console.error(`[ENGINE] Step ${i}: ERROR - ${error.message}`)
         this.callbacks.onStepError?.(step, error)
         this.setStatus('failed')
         throw error

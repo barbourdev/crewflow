@@ -24,6 +24,8 @@ interface UseWebSocketReturn {
     action: 'approve' | 'adjust' | 'redo',
     feedback?: string,
   ) => void
+  sendHumanInputResponse: (runId: string, runStepId: string, message: string) => void
+  sendReviewRejectResponse: (runId: string, runStepId: string, action: 'approve' | 'redo', feedback?: string) => void
 }
 
 export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketReturn {
@@ -131,6 +133,26 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     [send],
   )
 
+  const sendHumanInputResponse = useCallback(
+    (runId: string, runStepId: string, message: string) => {
+      send({
+        event: WS_CLIENT_EVENTS.HUMAN_INPUT_RESPONSE,
+        payload: { runId, runStepId, message },
+      })
+    },
+    [send],
+  )
+
+  const sendReviewRejectResponse = useCallback(
+    (runId: string, runStepId: string, action: 'approve' | 'redo', feedback?: string) => {
+      send({
+        event: WS_CLIENT_EVENTS.REVIEW_REJECT_RESPONSE,
+        payload: { runId, runStepId, action, feedback },
+      })
+    },
+    [send],
+  )
+
   return {
     isConnected,
     send,
@@ -138,5 +160,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     subscribeToRun,
     unsubscribeFromRun,
     sendCheckpointResponse,
+    sendHumanInputResponse,
+    sendReviewRejectResponse,
   }
 }

@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/db'
 import { success, notFound, badRequest, handleError } from '@/lib/api-response'
 import { getActiveRunner } from '@/lib/run-executor'
+import { wsServer } from '@/lib/ws-server'
 
 export async function POST(
   _request: NextRequest,
@@ -17,9 +18,19 @@ export async function POST(
       return badRequest('Run is already finished or cancelled')
     }
 
-    // Cancelar o runner ativo
+    // Cancelar o runner ativo e liberar waiters pendentes
     const runner = getActiveRunner(id)
     if (runner) runner.cancel()
+    wsServer.cancelPendingWaiters(id)
+
+    // Agregar custo parcial dos steps já completados
+    const costAgg = await prisma.runStep.aggregate({
+      where: { runId: id, status: 'completed' },
+      _sum: { cost: true, tokensUsed: true },
+    })
+
+    const partialCost = costAgg._sum.cost ?? 0
+    const partialTokens = costAgg._sum.tokensUsed ?? 0
 
     const updated = await prisma.$transaction(async (tx) => {
       await tx.runStep.updateMany({
@@ -29,7 +40,12 @@ export async function POST(
 
       return tx.run.update({
         where: { id },
-        data: { status: 'cancelled', completedAt: new Date() },
+        data: {
+          status: 'cancelled',
+          totalCost: partialCost,
+          totalTokens: partialTokens,
+          completedAt: new Date(),
+        },
       })
     })
 

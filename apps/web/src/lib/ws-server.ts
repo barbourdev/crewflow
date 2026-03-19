@@ -1,6 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws'
 import type { IncomingMessage } from 'http'
-import type { WSMessage, CheckpointResponsePayload } from './ws-events'
+import type { WSMessage, CheckpointResponsePayload, HumanInputResponsePayload, ReviewRejectResponsePayload } from './ws-events'
 import { WS_EVENTS, WS_CLIENT_EVENTS } from './ws-events'
 
 // ============================================================================
@@ -15,9 +15,12 @@ interface ConnectedClient {
 class CrewFlowWSServer {
   private wss: WebSocketServer | null = null
   private clients: Map<string, ConnectedClient> = new Map()
-  private checkpointResolvers: Map<string, (response: CheckpointResponsePayload) => void> =
-    new Map()
-  private pendingCheckpoints: Map<string, WSMessage> = new Map() // runId -> checkpoint request message
+  private checkpointResolvers: Map<string, (response: CheckpointResponsePayload) => void> = new Map()
+  private humanInputResolvers: Map<string, (response: HumanInputResponsePayload) => void> = new Map()
+  private reviewRejectResolvers: Map<string, (response: ReviewRejectResponsePayload) => void> = new Map()
+  private pendingCheckpoints: Map<string, WSMessage> = new Map()
+  private pendingHumanInputs: Map<string, WSMessage> = new Map()
+  private pendingReviewRejects: Map<string, WSMessage> = new Map()
   private clientIdCounter = 0
 
   initialize(server: import('http').Server) {
@@ -69,9 +72,12 @@ class CrewFlowWSServer {
         const { runId } = message.payload as { runId: string }
         client.subscribedRuns.add(runId)
         // Enviar checkpoint pendente se existir
-        const pendingCheckpoint = this.pendingCheckpoints.get(runId)
-        if (pendingCheckpoint && client.ws.readyState === WebSocket.OPEN) {
-          this.sendTo(client.ws, pendingCheckpoint)
+        // Enviar pendentes ao novo subscriber
+        for (const pending of [this.pendingCheckpoints, this.pendingHumanInputs, this.pendingReviewRejects]) {
+          const msg = pending.get(runId)
+          if (msg && client.ws.readyState === WebSocket.OPEN) {
+            this.sendTo(client.ws, msg)
+          }
         }
         break
       }
@@ -82,12 +88,31 @@ class CrewFlowWSServer {
       }
       case WS_CLIENT_EVENTS.CHECKPOINT_RESPONSE: {
         const payload = message.payload as CheckpointResponsePayload
-        // Limpar checkpoint pendente
         this.pendingCheckpoints.delete(payload.runId)
         const resolver = this.checkpointResolvers.get(payload.runStepId)
         if (resolver) {
           resolver(payload)
           this.checkpointResolvers.delete(payload.runStepId)
+        }
+        break
+      }
+      case WS_CLIENT_EVENTS.HUMAN_INPUT_RESPONSE: {
+        const payload = message.payload as HumanInputResponsePayload
+        this.pendingHumanInputs.delete(payload.runId)
+        const resolver = this.humanInputResolvers.get(payload.runStepId)
+        if (resolver) {
+          resolver(payload)
+          this.humanInputResolvers.delete(payload.runStepId)
+        }
+        break
+      }
+      case WS_CLIENT_EVENTS.REVIEW_REJECT_RESPONSE: {
+        const payload = message.payload as ReviewRejectResponsePayload
+        this.pendingReviewRejects.delete(payload.runId)
+        const resolver = this.reviewRejectResolvers.get(payload.runStepId)
+        if (resolver) {
+          resolver(payload)
+          this.reviewRejectResolvers.delete(payload.runStepId)
         }
         break
       }
@@ -126,6 +151,35 @@ class CrewFlowWSServer {
     return new Promise((resolve) => {
       this.checkpointResolvers.set(runStepId, resolve)
     })
+  }
+
+  /**
+   * Cancela todas as promises pendentes de um run (checkpoint, human input, review reject).
+   * Chamado quando o run termina (completed/failed/cancelled).
+   */
+  cancelPendingWaiters(runId: string) {
+    // Limpar pendentes
+    this.pendingCheckpoints.delete(runId)
+    this.pendingHumanInputs.delete(runId)
+    this.pendingReviewRejects.delete(runId)
+
+    // Resolver checkpoints com 'approve' (nao bloquear)
+    for (const [key, resolver] of this.checkpointResolvers) {
+      resolver({ runId, runStepId: key, action: 'approve' })
+    }
+    this.checkpointResolvers.clear()
+
+    // Resolver human inputs com mensagem vazia (skip)
+    for (const [key, resolver] of this.humanInputResolvers) {
+      resolver({ runId, runStepId: key, message: '' })
+    }
+    this.humanInputResolvers.clear()
+
+    // Resolver review rejects com 'approve' (nao bloquear)
+    for (const [key, resolver] of this.reviewRejectResolvers) {
+      resolver({ runId, runStepId: key, action: 'approve' })
+    }
+    this.reviewRejectResolvers.clear()
   }
 
   resolveCheckpoint(runStepId: string, response: CheckpointResponsePayload): boolean {
@@ -234,6 +288,38 @@ class CrewFlowWSServer {
     // Guardar como pendente para enviar a novos subscribers
     this.pendingCheckpoints.set(runId, message)
     this.broadcastToRun(runId, message)
+  }
+
+  // Human Input
+  emitHumanInputRequest(runId: string, runStepId: string, agentName: string, output: string) {
+    const message: WSMessage = {
+      event: WS_EVENTS.HUMAN_INPUT_REQUEST,
+      payload: { runId, runStepId, agentName, output },
+    }
+    this.pendingHumanInputs.set(runId, message)
+    this.broadcastToRun(runId, message)
+  }
+
+  waitForHumanInput(runStepId: string): Promise<HumanInputResponsePayload> {
+    return new Promise((resolve) => {
+      this.humanInputResolvers.set(runStepId, resolve)
+    })
+  }
+
+  // Review Reject
+  emitReviewRejectRequest(runId: string, runStepId: string, agentName: string, output: string, reason: string) {
+    const message: WSMessage = {
+      event: WS_EVENTS.REVIEW_REJECT_REQUEST,
+      payload: { runId, runStepId, agentName, output, reason },
+    }
+    this.pendingReviewRejects.set(runId, message)
+    this.broadcastToRun(runId, message)
+  }
+
+  waitForReviewRejectResponse(runStepId: string): Promise<ReviewRejectResponsePayload> {
+    return new Promise((resolve) => {
+      this.reviewRejectResolvers.set(runStepId, resolve)
+    })
   }
 
   emitRunMetrics(

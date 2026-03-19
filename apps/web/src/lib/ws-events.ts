@@ -27,6 +27,14 @@ export const WS_EVENTS = {
   CHECKPOINT_REQUEST: 'checkpoint:request',
   CHECKPOINT_RESPONSE: 'checkpoint:response',
 
+  // Human Input (agent asks user a question)
+  HUMAN_INPUT_REQUEST: 'human_input:request',
+  HUMAN_INPUT_RESPONSE: 'human_input:response',
+
+  // Review Reject (review agent rejected output)
+  REVIEW_REJECT_REQUEST: 'review_reject:request',
+  REVIEW_REJECT_RESPONSE: 'review_reject:response',
+
   // Connection
   CONNECTED: 'connected',
   ERROR: 'error',
@@ -37,6 +45,8 @@ export const WS_CLIENT_EVENTS = {
   SUBSCRIBE_RUN: 'subscribe:run',
   UNSUBSCRIBE_RUN: 'unsubscribe:run',
   CHECKPOINT_RESPONSE: 'checkpoint:response',
+  HUMAN_INPUT_RESPONSE: 'human_input:response',
+  REVIEW_REJECT_RESPONSE: 'review_reject:response',
   RUN_PAUSE: 'run:pause',
   RUN_RESUME: 'run:resume',
   RUN_CANCEL: 'run:cancel',
@@ -110,6 +120,34 @@ export interface CheckpointResponsePayload {
   runId: string
   runStepId: string
   action: 'approve' | 'adjust' | 'redo'
+  feedback?: string
+}
+
+export interface HumanInputRequestPayload {
+  runId: string
+  runStepId: string
+  agentName: string
+  output: string
+}
+
+export interface HumanInputResponsePayload {
+  runId: string
+  runStepId: string
+  message: string
+}
+
+export interface ReviewRejectRequestPayload {
+  runId: string
+  runStepId: string
+  agentName: string
+  output: string
+  reason: string
+}
+
+export interface ReviewRejectResponsePayload {
+  runId: string
+  runStepId: string
+  action: 'approve' | 'redo'
   feedback?: string
 }
 

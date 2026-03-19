@@ -48,6 +48,8 @@ export function getActiveRunner(runId: string): PipelineRunner | undefined {
 }
 
 async function failRun(runId: string, errorMessage: string, durationMs = 0) {
+  wsServer.cancelPendingWaiters(runId)
+
   await prisma.run.update({
     where: { id: runId },
     data: {
@@ -413,6 +415,48 @@ export async function executeRun(runId: string): Promise<void> {
       }
     },
 
+    onHumanInputRequest: async (request) => {
+      const runStepId = runStepMap.get(request.stepId) ?? request.stepId
+
+      wsServer.emitHumanInputRequest(runId, runStepId, request.agentName, request.output)
+
+      const response = await wsServer.waitForHumanInput(runStepId)
+
+      // Gravar a interacao como log
+      await prisma.runLog.create({
+        data: {
+          runStepId,
+          level: 'info',
+          message: `Human input: ${response.message}`,
+        },
+      }).catch(() => {})
+
+      return { message: response.message }
+    },
+
+    onReviewReject: async (step, output, reason) => {
+      const runStepId = runStepMap.get(step.id) ?? step.id
+      const agent = agentsMap.get(step.agentId)
+
+      wsServer.emitReviewRejectRequest(runId, runStepId, agent?.name ?? 'Review Agent', output, reason)
+
+      const response = await wsServer.waitForReviewRejectResponse(runStepId)
+
+      // Gravar a decisao como log
+      await prisma.runLog.create({
+        data: {
+          runStepId,
+          level: 'info',
+          message: `Review decision: ${response.action}${response.feedback ? ' - ' + response.feedback : ''}`,
+        },
+      }).catch(() => {})
+
+      return {
+        action: response.action,
+        feedback: response.feedback,
+      }
+    },
+
     onVetoFail: (step, violations) => {
       const runStepId = runStepMap.get(step.id) ?? step.id
       prisma.runLog.create({
@@ -441,11 +485,16 @@ export async function executeRun(runId: string): Promise<void> {
 
     const durationMs = Date.now() - startTime
     const lastOutput = Array.from(result.outputs.values()).pop() ?? ''
+    const wasCancelled = runner.getStatus() === 'cancelled'
+    const finalStatus = wasCancelled ? 'cancelled' : 'completed'
+
+    // Liberar qualquer waiter pendente
+    wsServer.cancelPendingWaiters(runId)
 
     await prisma.run.update({
       where: { id: runId },
       data: {
-        status: 'completed',
+        status: finalStatus,
         totalTokens: result.totalTokens.total,
         totalCost: result.totalCost,
         completedAt: new Date(),
@@ -453,7 +502,7 @@ export async function executeRun(runId: string): Promise<void> {
     })
 
     wsServer.emitRunMetrics(runId, result.totalTokens.total, result.totalCost, durationMs)
-    wsServer.emitRunComplete(runId, 'completed', result.totalTokens.total, result.totalCost, durationMs, lastOutput)
+    wsServer.emitRunComplete(runId, finalStatus, result.totalTokens.total, result.totalCost, durationMs, lastOutput)
 
     // Gerar memórias do run e salvar no squad
     try {
