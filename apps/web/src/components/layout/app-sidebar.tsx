@@ -1,92 +1,130 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard,
   Users,
-  LayoutTemplate,
-  Sparkles,
+  FileText,
+  BarChart3,
   Settings,
-  Zap,
+  ChevronsUpDown,
 } from 'lucide-react'
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
-  SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
 
 const navItems = [
-  { title: 'Dashboard', href: '/', icon: LayoutDashboard },
+  { title: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { title: 'Squads', href: '/squads', icon: Users },
-  { title: 'Templates', href: '/templates', icon: LayoutTemplate },
-  { title: 'Skills', href: '/skills', icon: Sparkles },
+  { title: 'Templates', href: '/templates', icon: FileText },
+  { title: 'Metrics', href: '/metrics', icon: BarChart3 },
 ]
 
 export function AppSidebar() {
   const pathname = usePathname()
+  const [userName, setUserName] = useState('User')
+
+  useEffect(() => {
+    const fetchName = () => {
+      fetch('/api/settings')
+        .then((r) => r.ok ? r.json() : null)
+        .then((json) => {
+          if (json?.data?.name) setUserName(json.data.name)
+        })
+        .catch(() => {})
+    }
+
+    fetchName()
+
+    // Escuta quando settings sao salvas
+    window.addEventListener('settings-updated', fetchName)
+    return () => window.removeEventListener('settings-updated', fetchName)
+  }, [])
 
   return (
-    <Sidebar>
-      <SidebarHeader className="border-b border-sidebar-border px-4 py-4">
-        <Link href="/" className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-amber text-black font-bold text-sm">
-            <Zap className="h-4 w-4" />
+    <Sidebar className="border-r border-slate-200/60">
+      {/* Logo */}
+      <SidebarHeader className="p-6">
+        <Link href="/" className="flex items-center gap-3">
+          <div className="size-9 bg-[#0066ff] rounded-xl flex items-center justify-center text-white shadow-lg shadow-[#0066ff]/20">
+            <svg className="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <rect x="3" y="3" width="7" height="7" rx="1" />
+              <rect x="14" y="3" width="7" height="7" rx="1" />
+              <rect x="3" y="14" width="7" height="7" rx="1" />
+              <rect x="14" y="14" width="7" height="7" rx="1" />
+            </svg>
           </div>
           <div>
-            <span className="text-sm font-semibold tracking-tight">CrewFlow</span>
-            <span className="ml-1.5 rounded bg-amber/10 px-1.5 py-0.5 text-[10px] font-mono font-medium text-amber">
-              v0.1
-            </span>
+            <h1 className="text-slate-900 font-bold text-lg leading-none">CrewFlow</h1>
+            <p className="text-[10px] text-slate-500 font-medium uppercase tracking-widest mt-1">
+              Management Console
+            </p>
           </div>
         </Link>
       </SidebarHeader>
 
-      <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel className="text-[11px] uppercase tracking-wider text-muted-foreground/60">
-            Navigation
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {navItems.map((item) => {
-                const isActive = item.href === '/'
-                  ? pathname === '/'
-                  : pathname.startsWith(item.href)
-                return (
-                  <SidebarMenuItem key={item.href}>
-                    <Link href={item.href}>
-                      <SidebarMenuButton isActive={isActive}>
-                        <item.icon className="h-4 w-4" />
-                        <span>{item.title}</span>
-                      </SidebarMenuButton>
-                    </Link>
-                  </SidebarMenuItem>
-                )
-              })}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+      {/* Main nav */}
+      <SidebarContent className="px-4 mt-4">
+        <SidebarMenu className="space-y-1">
+          {navItems.map((item) => {
+            const isActive = item.href === '/dashboard'
+              ? pathname === '/dashboard'
+              : pathname.startsWith(item.href)
+
+            return (
+              <SidebarMenuItem key={item.href}>
+                <Link
+                  href={item.href}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg font-semibold transition-all text-sm ${
+                    isActive
+                      ? 'bg-[#0066ff]/10 text-[#0066ff]'
+                      : 'text-slate-600 hover:bg-[#0066ff]/5'
+                  }`}
+                >
+                  <item.icon className="size-[22px]" />
+                  <span>{item.title}</span>
+                </Link>
+              </SidebarMenuItem>
+            )
+          })}
+        </SidebarMenu>
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-sidebar-border">
+      {/* Footer: Settings + User profile */}
+      <SidebarFooter className="p-4 border-t border-[#0066ff]/10">
         <SidebarMenu>
           <SidebarMenuItem>
-            <Link href="/settings">
-              <SidebarMenuButton isActive={pathname === '/settings'}>
-                <Settings className="h-4 w-4" />
-                <span>Settings</span>
-              </SidebarMenuButton>
+            <Link
+              href="/settings"
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg font-semibold transition-all text-sm ${
+                pathname === '/settings'
+                  ? 'bg-[#0066ff]/10 text-[#0066ff]'
+                  : 'text-slate-600 hover:bg-[#0066ff]/5'
+              }`}
+            >
+              <Settings className="size-[22px]" />
+              <span>Settings</span>
             </Link>
           </SidebarMenuItem>
         </SidebarMenu>
+
+        {/* User profile */}
+        <div className="mt-4 flex items-center gap-3 p-2 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer">
+          <div className="w-10 h-10 rounded-full bg-[#0066ff]/20 overflow-hidden border border-[#0066ff]/20 flex items-center justify-center text-[#0066ff] font-bold text-xs">
+            {userName.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
+          </div>
+          <div className="flex-1 overflow-hidden">
+            <p className="text-sm font-bold truncate">{userName}</p>
+          </div>
+          <ChevronsUpDown className="size-4 text-slate-400" />
+        </div>
       </SidebarFooter>
     </Sidebar>
   )
