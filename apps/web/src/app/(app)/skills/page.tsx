@@ -39,10 +39,10 @@ interface Skill {
 // ---------------------------------------------------------------------------
 
 const TYPE_CONFIG: Record<string, { icon: typeof Terminal; label: string; className: string }> = {
-  mcp: { icon: Server, label: 'MCP', className: 'bg-violet-500/10 text-violet-400 border-violet-500/20' },
-  script: { icon: Terminal, label: 'Script', className: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
-  prompt: { icon: MessageSquare, label: 'Prompt', className: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
-  hybrid: { icon: Combine, label: 'Hybrid', className: 'bg-amber/10 text-amber border-amber/20' },
+  mcp: { icon: Server, label: 'MCP', className: 'bg-violet-100 text-violet-600 border-violet-200 dark:bg-violet-500/10 dark:text-violet-400 dark:border-violet-500/20' },
+  script: { icon: Terminal, label: 'Script', className: 'bg-blue-100 text-blue-600 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20' },
+  prompt: { icon: MessageSquare, label: 'Prompt', className: 'bg-emerald-100 text-emerald-600 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20' },
+  hybrid: { icon: Combine, label: 'Hybrid', className: 'bg-primary/10 text-primary border-primary/20' },
 }
 
 // ---------------------------------------------------------------------------
@@ -137,10 +137,10 @@ export default function SkillsPage() {
                   const TypeIcon = tc.icon
 
                   return (
-                    <Card key={skill.id}>
+                    <Card key={skill.id} className="card-hover">
                       <CardHeader>
                         <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber/10 text-lg">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-lg">
                             {skill.icon || <Puzzle className="h-5 w-5 text-muted-foreground" />}
                           </div>
                           <div className="min-w-0 flex-1">

@@ -25,9 +25,17 @@ export async function GET(
         },
         runs: {
           orderBy: { createdAt: 'desc' },
-          take: 5,
+          take: 10,
           include: {
             _count: { select: { steps: true } },
+            steps: {
+              orderBy: { step: { order: 'asc' } },
+              select: {
+                id: true,
+                status: true,
+                step: { select: { id: true, order: true, label: true, type: true } },
+              },
+            },
           },
         },
       },
