@@ -1,7 +1,7 @@
 export { PipelineRunner, type PipelineCallbacks, type PipelineContext, type HumanInputRequest, type HumanInputResponse } from './pipeline-runner'
 export { analyzeOutput, type OutputAnalysis } from './output-analyzer'
 export { AgentExecutor, type AgentExecutorOptions } from './agent-executor'
-export { CheckpointHandler, type CheckpointResponse, type CheckpointAction } from './checkpoint-handler'
+export { CheckpointHandler, type CheckpointResponse, type CheckpointAction, type CheckpointType, type CheckpointRequest } from './checkpoint-handler'
 export { VetoChecker, type VetoResult } from './veto-checker'
 export { HandoffManager, type HandoffContext } from './handoff-manager'
 export { JobQueue } from './queue'

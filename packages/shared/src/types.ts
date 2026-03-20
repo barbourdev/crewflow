@@ -27,18 +27,40 @@ export interface AgentVoiceGuidance {
   toneRules: string[]
 }
 
+export interface TaskDefinition {
+  id: string
+  agentId: string
+  name: string
+  description: string
+  order: number
+  skills: string[]
+  inputSource?: string
+  outputTarget?: string
+  objective?: string
+  process?: string
+  outputFormat?: string
+  outputExample?: string
+  qualityCriteria: string[]
+  vetoConditions: string[]
+}
+
 export interface AgentDefinition {
   id: string
   name: string
+  title?: string
   icon: string
   role: string
+  execution: 'inline' | 'subagent'
   persona: AgentPersona
   voiceGuidance?: AgentVoiceGuidance
+  principles?: string
   operationalFramework?: string
   outputExamples?: string[]
   antiPatterns?: string[]
   qualityCriteria?: string[]
+  integration?: { readsFrom: string[]; writesTo: string[] }
   skills: string[]
+  tasks: TaskDefinition[]
   position: { col: number; row: number }
 }
 
@@ -48,6 +70,12 @@ export interface StepDefinition {
   order: number
   label: string
   execution: StepExecution
+  instructions?: string
+  contextLoading?: string[]
+  outputExample?: string
+  formatRef?: string
+  skillRefs?: string[]
+  modelTier?: string
   inputConfig?: Record<string, unknown>
   outputConfig?: Record<string, unknown>
   vetoConditions?: string[]

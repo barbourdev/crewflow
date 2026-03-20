@@ -1,4 +1,4 @@
-import type { AgentDefinition } from '@crewflow/shared'
+import type { AgentDefinition, TaskDefinition } from '@crewflow/shared'
 import type { AIProvider, AIMessage } from '@crewflow/ai'
 
 export interface AgentExecutorOptions {
@@ -8,20 +8,113 @@ export interface AgentExecutorOptions {
   memories?: string[]
   previousOutput?: string
   provider: AIProvider
+  /** Instrucoes do step (vindas do step file) */
+  stepInstructions?: string
+  /** Dados de contexto a carregar (squad data, reference files) */
+  contextData?: string[]
+  /** Exemplo de output esperado (do step) */
+  outputExample?: string
+  /**
+   * Callback para quando o agente precisa de input do usuario mid-execution.
+   * O agente usa o marcador [AWAITING_INPUT]pergunta[/AWAITING_INPUT] no output.
+   * O engine detecta, envia a pergunta ao usuario, e continua com a resposta.
+   */
+  onInlineQuestion?: (question: string, agentName: string) => Promise<string>
+}
+
+interface ExecutionResult {
+  content: string
+  tokensUsed: { input: number; output: number; total: number }
+  cost: number
 }
 
 export class AgentExecutor {
+  /**
+   * Executa um agente. Se o agente tem tasks, executa cada task em sequencia.
+   * Cada task gera um output que alimenta a proxima task.
+   */
   async execute(
     agent: AgentDefinition,
     input: string,
     options: AgentExecutorOptions,
-  ): Promise<{ content: string; tokensUsed: { input: number; output: number; total: number }; cost: number }> {
-    const systemPrompt = this.buildContext(
-      agent,
-      options.bestPractices,
-      options.skillInstructions,
-      options.memories,
-    )
+  ): Promise<ExecutionResult> {
+    // Se tem tasks, executar em sequencia (task decomposition)
+    if (agent.tasks.length > 0) {
+      return this.executeTasks(agent, input, options)
+    }
+
+    // Sem tasks — execucao simples (legado)
+    return this.executeSingle(agent, input, options)
+  }
+
+  /**
+   * Executa tasks em sequencia. Cada task tem suas proprias instrucoes,
+   * criterios de qualidade e formato de output.
+   * O output de cada task vira input da proxima.
+   */
+  private async executeTasks(
+    agent: AgentDefinition,
+    input: string,
+    options: AgentExecutorOptions,
+  ): Promise<ExecutionResult> {
+    const sortedTasks = [...agent.tasks].sort((a, b) => a.order - b.order)
+    const totalTokens = { input: 0, output: 0, total: 0 }
+    let totalCost = 0
+    let currentInput = input
+    let fullOutput = ''
+
+    for (let i = 0; i < sortedTasks.length; i++) {
+      const task = sortedTasks[i]!
+      const isLastTask = i === sortedTasks.length - 1
+
+      const taskPrompt = this.buildTaskPrompt(task, currentInput, options.previousOutput)
+      const systemPrompt = this.buildContext(agent, options, task)
+
+      const messages: AIMessage[] = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: taskPrompt },
+      ]
+
+      // So fazer streaming na ultima task (a que o usuario ve)
+      const onStream = isLastTask ? options.onStream : undefined
+
+      let result: ExecutionResult
+      if (onStream) {
+        // Emitir separador visual antes da ultima task
+        if (sortedTasks.length > 1) {
+          onStream(`\n\n---\n\n`)
+        }
+        result = await options.provider.streamText(messages, onStream)
+      } else {
+        result = await options.provider.generateText(messages)
+      }
+
+      totalTokens.input += result.tokensUsed.input
+      totalTokens.output += result.tokensUsed.output
+      totalTokens.total += result.tokensUsed.total
+      totalCost += result.cost
+
+      // Output desta task vira input da proxima
+      currentInput = result.content
+      fullOutput += (fullOutput ? '\n\n---\n\n' : '') + result.content
+    }
+
+    return { content: fullOutput, tokensUsed: totalTokens, cost: totalCost }
+  }
+
+  /**
+   * Execucao simples — 1 agente, 1 prompt (sem tasks).
+   * Suporta loop de inline questions: se o agente usar [AWAITING_INPUT],
+   * a pergunta eh enviada ao usuario e a resposta alimenta a proxima chamada.
+   */
+  private async executeSingle(
+    agent: AgentDefinition,
+    input: string,
+    options: AgentExecutorOptions,
+  ): Promise<ExecutionResult> {
+    const systemPrompt = this.buildContext(agent, options)
+    const totalTokens = { input: 0, output: 0, total: 0 }
+    let totalCost = 0
 
     const messages: AIMessage[] = [
       { role: 'system', content: systemPrompt },
@@ -36,33 +129,142 @@ export class AgentExecutor {
       messages.push({ role: 'user', content: input })
     }
 
-    if (options.onStream) {
-      return options.provider.streamText(messages, options.onStream)
+    let fullOutput = ''
+    const MAX_QUESTION_ROUNDS = 5
+
+    for (let round = 0; round <= MAX_QUESTION_ROUNDS; round++) {
+      let result: ExecutionResult
+      if (options.onStream && round === 0) {
+        result = await options.provider.streamText(messages, options.onStream)
+      } else if (options.onStream) {
+        // Em rounds de continuacao, tambem fazer streaming
+        result = await options.provider.streamText(messages, options.onStream)
+      } else {
+        result = await options.provider.generateText(messages)
+      }
+
+      totalTokens.input += result.tokensUsed.input
+      totalTokens.output += result.tokensUsed.output
+      totalTokens.total += result.tokensUsed.total
+      totalCost += result.cost
+
+      // Detectar inline question
+      const detection = AgentExecutor.detectInlineQuestion(result.content)
+
+      if (!detection.hasQuestion || !options.onInlineQuestion) {
+        // Sem pergunta — retornar output completo
+        fullOutput += result.content
+        return { content: fullOutput, tokensUsed: totalTokens, cost: totalCost }
+      }
+
+      // Pergunta detectada — guardar output ate aqui
+      if (detection.outputBeforeQuestion) {
+        fullOutput += detection.outputBeforeQuestion + '\n\n'
+      }
+
+      console.log(`[ENGINE] Inline question detected from "${agent.name}": ${detection.question.slice(0, 100)}...`)
+
+      // Enviar pergunta ao usuario e esperar resposta
+      const userResponse = await options.onInlineQuestion(detection.question, agent.name)
+
+      console.log(`[ENGINE] User responded to "${agent.name}": ${userResponse.slice(0, 100)}...`)
+
+      // Adicionar a troca ao historico de mensagens e continuar
+      messages.push({ role: 'assistant', content: result.content })
+      messages.push({ role: 'user', content: userResponse })
+
+      // Emitir separador visual no stream
+      if (options.onStream) {
+        options.onStream(`\n\n`)
+      }
     }
 
-    return options.provider.generateText(messages)
+    // Se chegou aqui, excedeu o limite de rounds
+    return { content: fullOutput, tokensUsed: totalTokens, cost: totalCost }
   }
 
+  /**
+   * Constroi o prompt do usuario para uma task especifica
+   */
+  private buildTaskPrompt(
+    task: TaskDefinition,
+    input: string,
+    previousOutput?: string,
+  ): string {
+    const parts: string[] = []
+
+    if (previousOutput) {
+      parts.push(`## Contexto do agente/task anterior:\n${previousOutput}`)
+    }
+
+    parts.push(`## Sua tarefa atual: ${task.name}`)
+
+    if (task.objective) {
+      parts.push(`### Objetivo:\n${task.objective}`)
+    }
+
+    if (task.process) {
+      parts.push(`### Processo a seguir:\n${task.process}`)
+    }
+
+    if (task.outputFormat) {
+      parts.push(`### Formato de output esperado:\n${task.outputFormat}`)
+    }
+
+    if (task.outputExample) {
+      parts.push(`### Exemplo de output:\n${task.outputExample}`)
+    }
+
+    if (task.qualityCriteria.length > 0) {
+      parts.push(`### Criterios de qualidade:\n${task.qualityCriteria.map((c) => `- ${c}`).join('\n')}`)
+    }
+
+    if (task.vetoConditions.length > 0) {
+      parts.push(`### Condicoes de rejeicao (evite a todo custo):\n${task.vetoConditions.map((v) => `- ${v}`).join('\n')}`)
+    }
+
+    parts.push(`## Input:\n${input}`)
+
+    return parts.join('\n\n')
+  }
+
+  /**
+   * Constroi o system prompt completo do agente, injetando:
+   * - Persona rica (8 secoes)
+   * - Instrucoes do step
+   * - Best practices
+   * - Skill instructions
+   * - Dados de contexto (squad data)
+   * - Memorias
+   * - Task-specific context (se houver)
+   */
   buildContext(
     agent: AgentDefinition,
-    bestPractices?: string[],
-    skillInstructions?: string[],
-    memories?: string[],
+    options?: Partial<AgentExecutorOptions>,
+    task?: TaskDefinition,
   ): string {
     const parts: string[] = []
 
     // Data atual
     parts.push(`Data atual: ${new Date().toISOString().split('T')[0]}`)
 
-    // Persona
+    // === PERSONA RICA ===
     const p = agent.persona
-    parts.push(`# Você é: ${agent.name}`)
+    parts.push(`# Voce eh: ${agent.name}${agent.title ? ` — ${agent.title}` : ''}`)
     parts.push(`## Papel: ${p.role}`)
-    parts.push(`## Identidade: ${p.identity}`)
-    parts.push(`## Estilo de comunicação: ${p.communicationStyle}`)
 
-    if (p.principles.length > 0) {
-      parts.push(`## Princípios:\n${p.principles.map((pr) => `- ${pr}`).join('\n')}`)
+    if (p.identity) {
+      parts.push(`## Identidade: ${p.identity}`)
+    }
+    if (p.communicationStyle) {
+      parts.push(`## Estilo de comunicacao: ${p.communicationStyle}`)
+    }
+
+    // Principios (campo dedicado ou do persona)
+    if (agent.principles) {
+      parts.push(`## Principios:\n${agent.principles}`)
+    } else if (p.principles.length > 0) {
+      parts.push(`## Principios:\n${p.principles.map((pr) => `- ${pr}`).join('\n')}`)
     }
 
     // Voice guidance
@@ -84,36 +286,105 @@ export class AgentExecutor {
       parts.push(`## Framework operacional:\n${agent.operationalFramework}`)
     }
 
+    // Anti-patterns
+    if (agent.antiPatterns && agent.antiPatterns.length > 0) {
+      parts.push(`## Anti-padroes (NUNCA faca):\n${agent.antiPatterns.map((a) => `- ${a}`).join('\n')}`)
+    }
+
+    // Quality criteria (agent-level)
+    if (agent.qualityCriteria && agent.qualityCriteria.length > 0) {
+      parts.push(`## Criterios de qualidade:\n${agent.qualityCriteria.map((q) => `- ${q}`).join('\n')}`)
+    }
+
+    // Integration
+    if (agent.integration) {
+      if (agent.integration.readsFrom.length > 0) {
+        parts.push(`## Voce le de:\n${agent.integration.readsFrom.map((r) => `- ${r}`).join('\n')}`)
+      }
+      if (agent.integration.writesTo.length > 0) {
+        parts.push(`## Voce escreve para:\n${agent.integration.writesTo.map((w) => `- ${w}`).join('\n')}`)
+      }
+    }
+
     // Output examples
     if (agent.outputExamples && agent.outputExamples.length > 0) {
       parts.push(`## Exemplos de output:\n${agent.outputExamples.map((e) => `---\n${e}`).join('\n')}`)
     }
 
-    // Anti-patterns
-    if (agent.antiPatterns && agent.antiPatterns.length > 0) {
-      parts.push(`## Anti-padrões (evite):\n${agent.antiPatterns.map((a) => `- ${a}`).join('\n')}`)
+    // === INSTRUCOES DO STEP ===
+    if (options?.stepInstructions) {
+      parts.push(`## Instrucoes especificas deste step:\n${options.stepInstructions}`)
     }
 
-    // Quality criteria
-    if (agent.qualityCriteria && agent.qualityCriteria.length > 0) {
-      parts.push(`## Critérios de qualidade:\n${agent.qualityCriteria.map((q) => `- ${q}`).join('\n')}`)
+    // === EXEMPLO DE OUTPUT DO STEP ===
+    if (options?.outputExample) {
+      parts.push(`## Exemplo de output esperado neste step:\n${options.outputExample}`)
     }
 
-    // Best practices
-    if (bestPractices && bestPractices.length > 0) {
-      parts.push(`## Boas práticas a seguir:\n${bestPractices.map((bp) => `- ${bp}`).join('\n')}`)
+    // === DADOS DE CONTEXTO (squad data: quality-criteria, tone-of-voice, etc.) ===
+    if (options?.contextData && options.contextData.length > 0) {
+      parts.push(`## Dados de referencia:\n${options.contextData.join('\n\n---\n\n')}`)
     }
 
-    // Skill instructions
-    if (skillInstructions && skillInstructions.length > 0) {
-      parts.push(`## Instruções de skills:\n${skillInstructions.join('\n\n')}`)
+    // === BEST PRACTICES ===
+    if (options?.bestPractices && options.bestPractices.length > 0) {
+      parts.push(`## Boas praticas a seguir:\n${options.bestPractices.join('\n\n')}`)
     }
 
-    // Memórias de execuções anteriores
-    if (memories && memories.length > 0) {
-      parts.push(`## Aprendizados de execuções anteriores (use para melhorar seu output):\n${memories.map((m) => `- ${m}`).join('\n')}`)
+    // === SKILL INSTRUCTIONS (o SKILL.md inteiro, nao so descricao) ===
+    if (options?.skillInstructions && options.skillInstructions.length > 0) {
+      parts.push(`## Instrucoes de skills disponiveis:\n${options.skillInstructions.join('\n\n---\n\n')}`)
+    }
+
+    // === MEMORIAS ===
+    if (options?.memories && options.memories.length > 0) {
+      parts.push(`## Aprendizados de execucoes anteriores (use para melhorar seu output):\n${options.memories.map((m) => `- ${m}`).join('\n')}`)
+    }
+
+    // === TASK SKILLS (skills especificas da task atual) ===
+    if (task && task.skills.length > 0) {
+      parts.push(`## Skills disponiveis para esta task: ${task.skills.join(', ')}`)
+    }
+
+    // === INSTRUCAO DE INLINE QUESTIONS ===
+    if (options?.onInlineQuestion) {
+      parts.push(`## Interacao com o usuario
+Se voce precisa de uma decisao ou preferencia do usuario para continuar seu trabalho,
+use o marcador abaixo para fazer a pergunta. O sistema vai pausar, coletar a resposta,
+e voce podera continuar com essa informacao.
+
+Formato:
+[AWAITING_INPUT]
+Sua pergunta aqui. Seja claro e direto.
+Se quiser oferecer opcoes, liste-as:
+1. Opcao A — descricao breve
+2. Opcao B — descricao breve
+3. Opcao C — descricao breve
+[/AWAITING_INPUT]
+
+IMPORTANTE:
+- Use este marcador SOMENTE quando a decisao do usuario eh necessaria para continuar
+- Nao use para perguntas retoricas ou confirmacoes triviais
+- Apos receber a resposta, continue seu trabalho incorporando a escolha do usuario`)
     }
 
     return parts.join('\n\n')
+  }
+
+  // ================================================================
+  // INLINE QUESTION DETECTION
+  // ================================================================
+
+  /** Detecta se o output contem um marcador de pergunta inline */
+  static detectInlineQuestion(output: string): { hasQuestion: boolean; question: string; outputBeforeQuestion: string } {
+    const match = output.match(/\[AWAITING_INPUT\]([\s\S]*?)\[\/AWAITING_INPUT\]/)
+    if (!match) {
+      return { hasQuestion: false, question: '', outputBeforeQuestion: output }
+    }
+
+    const question = match[1]!.trim()
+    const outputBeforeQuestion = output.slice(0, match.index).trim()
+
+    return { hasQuestion: true, question, outputBeforeQuestion }
   }
 }

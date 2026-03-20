@@ -33,28 +33,54 @@ model User {
 // ============================================================================
 
 model Squad {
-  id          String   @id @default(cuid())
-  name        String
-  code        String   @unique
-  icon        String?
-  gradient    String?  // CSS gradient for squad card banner, e.g. "from-blue-500/20 to-purple-500/10"
-  description String?
-  version     String   @default("1.0.0")
-  userId      String
-  config      String   @default("{}") // JSON: { defaultModel, temperature, maxRetries, maxTokensPerStep, maxCostPerRun }
-  memories    String   @default("[]") // JSON array: learnings de runs anteriores
-  isTemplate  Boolean  @default(false)
-  isArchived  Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String   @id @default(cuid())
+  name            String
+  code            String   @unique
+  icon            String?
+  gradient        String?  // CSS gradient for squad card banner
+  description     String?
+  version         String   @default("1.0.0")
+  userId          String
+  performanceMode String   @default("balanced") // alta-performance | balanced | economico
+  targetAudience  String?  // descricao do publico-alvo
+  language        String   @default("pt-BR")
+  config          String   @default("{}") // JSON: { defaultModel, temperature, maxRetries, maxTokensPerStep, maxCostPerRun }
+  memories        String   @default("[]") // JSON array: learnings de runs anteriores
+  isTemplate      Boolean  @default(false)
+  isArchived      Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  user     User      @relation(fields: [userId], references: [id])
+  user     User        @relation(fields: [userId], references: [id])
   agents   Agent[]
   pipeline Pipeline?
   runs     Run[]
+  data     SquadData[]
+  mcps     SquadMcp[]
 
   @@index([userId])
   @@index([isTemplate])
+}
+
+// ============================================================================
+// SQUAD DATA — dados de referencia do squad (quality-criteria, tone-of-voice, etc.)
+// Equivale aos arquivos pipeline/data/*.md do opensquad
+// ============================================================================
+
+model SquadData {
+  id       String @id @default(cuid())
+  squadId  String
+  name     String // ex: "quality-criteria", "tone-of-voice", "anti-patterns"
+  category String @default("reference") // reference | research | framework | examples
+  content  String // markdown com conteudo completo
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  squad Squad @relation(fields: [squadId], references: [id], onDelete: Cascade)
+
+  @@unique([squadId, name])
+  @@index([squadId])
 }
 
 // ============================================================================
@@ -62,26 +88,76 @@ model Squad {
 // ============================================================================
 
 model Agent {
-  id          String   @id @default(cuid())
-  squadId     String
-  name        String
-  icon        String?
-  role        String
-  persona     String   @default("{}") // JSON completo da persona
-  model       String?
-  temperature Float?
-  maxTokens   Int?
-  positionCol Int      @default(0)
-  positionRow Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String   @id @default(cuid())
+  squadId         String
+  name            String   // nome aliterativo (ex: "Pedro Pesquisa")
+  title           String?  // titulo do papel (ex: "Tech News Researcher")
+  icon            String?
+  role            String   // researcher | creator | designer | reviewer | etc.
+  execution       String   @default("inline") // inline | subagent
+
+  // --- Persona rica (equivale as 8 secoes do .agent.md do opensquad) ---
+  persona         String   @default("{}") // JSON: { role, identity, communicationStyle }
+  principles      String?  // markdown: principios operacionais (5+ itens)
+  voiceGuidance   String   @default("{}") // JSON: { alwaysUse: [], neverUse: [], toneRules: [] }
+  antiPatterns    String   @default("{}") // JSON: { neverDo: [], alwaysDo: [] }
+  qualityCriteria String   @default("[]") // JSON array: criterios especificos e mensuraveis
+  integration     String   @default("{}") // JSON: { readsFrom: [], writesTo: [] }
+
+  // --- Config de modelo ---
+  model           String?
+  modelTier       String?  // powerful | balanced | fast
+  temperature     Float?
+  maxTokens       Int?
+
+  // --- Layout visual ---
+  positionCol     Int      @default(0)
+  positionRow     Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   squad    Squad        @relation(fields: [squadId], references: [id], onDelete: Cascade)
   skills   AgentSkill[]
   steps    Step[]
+  tasks    Task[]
   runSteps RunStep[]
 
   @@index([squadId])
+}
+
+// ============================================================================
+// TASK — tarefas decompostas por agente
+// Equivale aos arquivos agents/{agent}/tasks/*.md do opensquad
+// Um agente pode ter N tasks executadas em sequencia dentro de um step
+// ============================================================================
+
+model Task {
+  id              String @id @default(cuid())
+  agentId         String
+  name            String // ex: "find-news", "rank-stories"
+  description     String // descricao curta
+  order           Int    // ordem de execucao dentro do agente
+  skills          String @default("[]") // JSON array: skills necessarias para esta task
+  inputSource     String? // de onde vem o input (arquivo/step anterior)
+  outputTarget    String? // para onde vai o output
+
+  // --- Conteudo operacional (equivale as secoes do task file) ---
+  objective       String? // 2-3 frases descrevendo o objetivo
+  process         String? // markdown: passos concretos (min 3)
+  outputFormat    String? // YAML/markdown schema do output esperado
+  outputExample   String? // exemplo completo e realista (15+ linhas)
+  qualityCriteria String  @default("[]") // JSON array: criterios mensuraveis (min 3)
+  vetoConditions  String  @default("[]") // JSON array: condicoes de rejeicao automatica (min 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  agent    Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  runTasks RunTask[]
+
+  @@unique([agentId, name])
+  @@index([agentId])
 }
 
 // ============================================================================
@@ -110,6 +186,18 @@ model Step {
   order          Int
   label          String
   type           String   @default("inline") // inline | subagent | checkpoint
+
+  // --- Contexto e instrucoes (equivale ao step file do opensquad) ---
+  instructions   String?  // markdown: instrucoes detalhadas do step
+  contextLoading String   @default("[]") // JSON array: dados/arquivos a carregar antes da execucao
+  outputExample  String?  // exemplo completo do output esperado (15+ linhas)
+
+  // --- Injection ---
+  formatRef      String?  // referencia a BestPractice para format injection (ex: "instagram-feed")
+  skillRefs      String   @default("[]") // JSON array: skill names a injetar neste step
+  modelTier      String?  // powerful | balanced | fast — override do modelo para este step
+
+  // --- Config existente ---
   inputConfig    String   @default("{}") // JSON
   outputConfig   String   @default("{}") // JSON
   vetoConditions String   @default("[]") // JSON array
@@ -135,12 +223,23 @@ model Step {
 model Skill {
   id             String   @id @default(cuid())
   name           String   @unique
-  type           String // mcp | script | prompt | hybrid
+  type           String   // mcp | script | prompt | hybrid
   description    String
   version        String   @default("1.0.0")
   icon           String?
-  config         String   @default("{}") // JSON
-  implementation String?
+  categories     String   @default("[]") // JSON array: tags de categoria (ex: ["social-media", "content"])
+
+  // --- Instrucoes operacionais (o SKILL.md inteiro do opensquad) ---
+  // Isso eh injetado no contexto do agente quando a skill eh usada
+  instructions   String?  // markdown longo: quando usar, workflow, formatos, boas praticas, exemplos
+  implementation String?  // markdown: detalhes tecnicos de implementacao
+
+  // --- Config tecnica ---
+  config         String   @default("{}") // JSON generico
+  mcpConfig      String   @default("{}") // JSON: { serverName, command, args, transport, env }
+  scriptConfig   String   @default("{}") // JSON: { command, args, workdir, timeout }
+  envVars        String   @default("[]") // JSON array: variaveis de ambiente necessarias
+
   isBuiltin      Boolean  @default(false)
   isPublic       Boolean  @default(true)
   createdAt      DateTime @default(now())
@@ -156,13 +255,53 @@ model Skill {
 model AgentSkill {
   agentId    String
   skillId    String
-  config     String   @default("{}") // JSON
+  config     String   @default("{}") // JSON: config especifica desta skill para este agente
   assignedAt DateTime @default(now())
 
   agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
   skill Skill @relation(fields: [skillId], references: [id], onDelete: Cascade)
 
   @@id([agentId, skillId])
+}
+
+// ============================================================================
+// MCP SERVER — servidores MCP conectaveis a squads (future: runtime MCP)
+// Ex: github MCP para code review, slack MCP para notificacoes
+// ============================================================================
+
+model McpServer {
+  id          String  @id @default(cuid())
+  name        String  @unique // ex: "github", "slack", "linear"
+  description String
+  icon        String?
+  command     String  // ex: "npx", "node", "python"
+  args        String  @default("[]") // JSON array: argumentos do comando
+  transport   String  @default("stdio") // stdio | sse
+  envVars     String  @default("[]") // JSON array: { name, description, required }
+  isActive    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  squads SquadMcp[]
+}
+
+// ============================================================================
+// SQUAD <-> MCP SERVER (many-to-many)
+// Conecta servidores MCP a squads para runtime execution
+// ============================================================================
+
+model SquadMcp {
+  squadId     String
+  mcpServerId String
+  config      String   @default("{}") // JSON: env vars preenchidas, config especifica
+  isActive    Boolean  @default(true)
+  assignedAt  DateTime @default(now())
+
+  squad     Squad     @relation(fields: [squadId], references: [id], onDelete: Cascade)
+  mcpServer McpServer @relation(fields: [mcpServerId], references: [id], onDelete: Cascade)
+
+  @@id([squadId, mcpServerId])
 }
 
 // ============================================================================
@@ -177,6 +316,7 @@ model Run {
   input       String    @default("{}") // JSON
   totalTokens Int       @default(0)
   totalCost   Float     @default(0)
+  duration    Int?      // duracao total em ms
   startedAt   DateTime?
   completedAt DateTime?
   createdAt   DateTime  @default(now())
@@ -211,13 +351,40 @@ model RunStep {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  run   Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
-  step  Step     @relation(fields: [stepId], references: [id])
-  agent Agent?   @relation(fields: [agentId], references: [id])
-  logs  RunLog[]
+  run      Run       @relation(fields: [runId], references: [id], onDelete: Cascade)
+  step     Step      @relation(fields: [stepId], references: [id])
+  agent    Agent?    @relation(fields: [agentId], references: [id])
+  logs     RunLog[]
+  tasks    RunTask[]
 
   @@index([runId])
   @@index([stepId])
+}
+
+// ============================================================================
+// RUN TASK — execucao individual de cada task dentro de um step
+// Permite tracking granular: qual task do agente rodou, quanto custou, qual output
+// ============================================================================
+
+model RunTask {
+  id         String    @id @default(cuid())
+  runStepId  String
+  taskId     String
+  order      Int
+  status     String    @default("pending") // pending | running | completed | failed | skipped
+  input      String?
+  output     String?
+  tokensUsed Int       @default(0)
+  cost       Float     @default(0)
+  startedAt  DateTime?
+  completedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  runStep RunStep @relation(fields: [runStepId], references: [id], onDelete: Cascade)
+  task    Task    @relation(fields: [taskId], references: [id])
+
+  @@index([runStepId])
+  @@index([taskId])
 }
 
 // ============================================================================

@@ -12,7 +12,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard' },
   { label: 'Open Source', href: '#oss' },
-  { label: 'Docs', href: '#' },
+  { label: 'Docs', href: '/docs' },
 ]
 
 const BRAND = 'CREWFLOW'

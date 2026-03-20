@@ -72,7 +72,7 @@ export function HeroSection({ onIntroComplete }: HeroSectionProps) {
 
   // Quando line2 terminar, revelar o restante
   useEffect(() => {
-    if (line2.done) {
+    if (line2.done) { 
       const t = setTimeout(() => {
         setShowContent(true)
         onIntroComplete?.()

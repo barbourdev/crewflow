@@ -114,6 +114,14 @@ export interface CheckpointRequestPayload {
   runStepId: string
   stepLabel: string
   previousOutput: string
+  /** Tipo de checkpoint: approval (aprovar/rejeitar), selection (escolher opcao), input (texto livre) */
+  checkpointType: 'approval' | 'selection' | 'input'
+  /** Pergunta a apresentar ao usuario */
+  question?: string
+  /** Opcoes para selecao (quando tipo = selection) */
+  options?: string[]
+  /** Instrucoes adicionais do step */
+  instructions?: string
 }
 
 export interface CheckpointResponsePayload {
@@ -121,6 +129,8 @@ export interface CheckpointResponsePayload {
   runStepId: string
   action: 'approve' | 'adjust' | 'redo'
   feedback?: string
+  /** Valor selecionado (quando tipo = selection) */
+  selected?: string
 }
 
 export interface HumanInputRequestPayload {

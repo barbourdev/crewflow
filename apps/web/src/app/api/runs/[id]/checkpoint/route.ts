@@ -13,6 +13,7 @@ export async function POST(
       runStepId: string
       action: 'approve' | 'adjust' | 'redo'
       feedback?: string
+      selected?: string
     }
 
     const run = await prisma.run.findUnique({ where: { id } })
@@ -24,6 +25,7 @@ export async function POST(
       runStepId: body.runStepId,
       action: body.action,
       feedback: body.feedback,
+      selected: body.selected,
     })
 
     return success({ ok: true })

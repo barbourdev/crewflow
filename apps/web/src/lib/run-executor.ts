@@ -2,7 +2,7 @@ import { prisma } from '@/lib/db'
 import { wsServer } from '@/lib/ws-server'
 import { PipelineRunner, type PipelineContext } from '@crewflow/engine'
 import { createProvider } from '@crewflow/ai'
-import type { AgentDefinition, StepDefinition } from '@crewflow/shared'
+import type { AgentDefinition, StepDefinition, TaskDefinition } from '@crewflow/shared'
 
 // Mapa de runners ativos para pause/resume/cancel via API
 const activeRunners = new Map<string, PipelineRunner>()
@@ -22,7 +22,7 @@ function generateRunMemories(
   // Resumo do run
   const stepsCompleted = outputs.size
   memories.push(
-    `[${date}] Run com input "${input.slice(0, 100)}${input.length > 100 ? '...' : ''}" — ${stepsCompleted}/${steps.length} steps concluídos, ${totalTokens} tokens, $${totalCost.toFixed(4)}, ${Math.round(durationMs / 1000)}s`
+    `[${date}] Run com input "${input.slice(0, 100)}${input.length > 100 ? '...' : ''}" — ${stepsCompleted}/${steps.length} steps concluidos, ${totalTokens} tokens, $${totalCost.toFixed(4)}, ${Math.round(durationMs / 1000)}s`
   )
 
   // Para cada step, extrair aprendizado do output
@@ -33,7 +33,7 @@ function generateRunMemories(
     const agent = agents.get(step.agentId)
     const agentName = agent?.name ?? 'Agent'
 
-    // Salvar um resumo curto de cada output para referência futura
+    // Salvar um resumo curto de cada output para referencia futura
     const summary = output.length > 200 ? output.slice(0, 200) + '...' : output
     memories.push(
       `[${date}] ${agentName} (${step.label}): ${summary}`
@@ -55,6 +55,7 @@ async function failRun(runId: string, errorMessage: string, durationMs = 0) {
     data: {
       status: 'failed',
       completedAt: new Date(),
+      duration: durationMs,
     },
   }).catch(() => {})
 
@@ -86,6 +87,7 @@ export async function executeRun(runId: string): Promise<void> {
           agents: {
             include: {
               skills: { include: { skill: true } },
+              tasks: { orderBy: { order: 'asc' } },
             },
           },
           pipeline: {
@@ -93,6 +95,7 @@ export async function executeRun(runId: string): Promise<void> {
               steps: { orderBy: { order: 'asc' } },
             },
           },
+          data: true,
         },
       },
       steps: {
@@ -104,7 +107,7 @@ export async function executeRun(runId: string): Promise<void> {
   })
 
   if (!run || !run.squad.pipeline) {
-    await failRun(runId, 'Run não encontrado ou sem pipeline configurada.')
+    await failRun(runId, 'Run nao encontrado ou sem pipeline configurada.')
     return
   }
 
@@ -121,52 +124,107 @@ export async function executeRun(runId: string): Promise<void> {
   const provider = apiKeys.anthropic ? 'anthropic' : apiKeys.openai ? 'openai' : null
 
   if (!provider) {
-    await failRun(runId, 'Nenhuma API key configurada. Vá em Settings para adicionar uma chave da Anthropic ou OpenAI.')
+    await failRun(runId, 'Nenhuma API key configurada. Va em Settings para adicionar uma chave da Anthropic ou OpenAI.')
     return
   }
 
   const aiProvider = createProvider(provider, apiKeys[provider]!)
 
-  // Mapear agentes do DB para AgentDefinition
+  // ================================================================
+  // MAPEAR AGENTES DO DB → AgentDefinition (com persona rica + tasks)
+  // ================================================================
   const agentsMap = new Map<string, AgentDefinition>()
   for (const agent of run.squad.agents) {
     const persona = agent.persona ? JSON.parse(agent.persona as string) : {}
+    const voiceGuidance = agent.voiceGuidance ? JSON.parse(agent.voiceGuidance as string) : undefined
+    const antiPatterns = agent.antiPatterns ? JSON.parse(agent.antiPatterns as string) : undefined
+    const qualityCriteria = agent.qualityCriteria ? JSON.parse(agent.qualityCriteria as string) : undefined
+    const integration = agent.integration ? JSON.parse(agent.integration as string) : undefined
+
+    // Mapear tasks do agente
+    const tasks: TaskDefinition[] = agent.tasks.map((t) => ({
+      id: t.id,
+      agentId: t.agentId,
+      name: t.name,
+      description: t.description,
+      order: t.order,
+      skills: t.skills ? JSON.parse(t.skills as string) : [],
+      inputSource: t.inputSource ?? undefined,
+      outputTarget: t.outputTarget ?? undefined,
+      objective: t.objective ?? undefined,
+      process: t.process ?? undefined,
+      outputFormat: t.outputFormat ?? undefined,
+      outputExample: t.outputExample ?? undefined,
+      qualityCriteria: t.qualityCriteria ? JSON.parse(t.qualityCriteria as string) : [],
+      vetoConditions: t.vetoConditions ? JSON.parse(t.vetoConditions as string) : [],
+    }))
+
     agentsMap.set(agent.id, {
       id: agent.id,
       name: agent.name,
-      icon: agent.icon ?? '🤖',
+      title: agent.title ?? undefined,
+      icon: agent.icon ?? '',
       role: agent.role,
+      execution: (agent.execution as 'inline' | 'subagent') ?? 'inline',
       persona: {
         role: persona.role ?? persona.role_definition ?? agent.role,
         identity: persona.identity ?? '',
         communicationStyle: persona.communicationStyle ?? persona.communication_style ?? '',
         principles: persona.principles ?? [],
       },
-      voiceGuidance: persona.voiceGuidance ?? persona.voice_guidance,
+      principles: agent.principles ?? undefined,
+      voiceGuidance: voiceGuidance && (voiceGuidance.alwaysUse || voiceGuidance.neverUse || voiceGuidance.toneRules)
+        ? {
+            alwaysUse: voiceGuidance.alwaysUse ?? [],
+            neverUse: voiceGuidance.neverUse ?? [],
+            toneRules: voiceGuidance.toneRules ?? [],
+          }
+        : undefined,
       operationalFramework: persona.operationalFramework ?? persona.operational_framework
-        ? JSON.stringify(persona.operationalFramework ?? persona.operational_framework)
+        ? (typeof (persona.operationalFramework ?? persona.operational_framework) === 'string'
+          ? (persona.operationalFramework ?? persona.operational_framework)
+          : JSON.stringify(persona.operationalFramework ?? persona.operational_framework))
         : undefined,
       outputExamples: persona.outputExamples ?? persona.output_examples,
-      antiPatterns: persona.antiPatterns ?? persona.anti_patterns,
-      qualityCriteria: persona.qualityCriteria ?? persona.quality_criteria,
+      antiPatterns: Array.isArray(antiPatterns?.neverDo)
+        ? antiPatterns.neverDo
+        : (antiPatterns ?? persona.antiPatterns ?? persona.anti_patterns),
+      qualityCriteria: Array.isArray(qualityCriteria)
+        ? qualityCriteria
+        : (persona.qualityCriteria ?? persona.quality_criteria),
+      integration: integration && (integration.readsFrom || integration.writesTo)
+        ? {
+            readsFrom: integration.readsFrom ?? [],
+            writesTo: integration.writesTo ?? [],
+          }
+        : undefined,
       skills: agent.skills.map((s) => s.skill.name),
-      position: { col: 0, row: 0 },
+      tasks,
+      position: { col: agent.positionCol, row: agent.positionRow },
     })
   }
 
-  // Mapear steps do DB para StepDefinition (incluindo checkpoints)
+  // ================================================================
+  // MAPEAR STEPS DO DB → StepDefinition (com instructions, format, skills)
+  // ================================================================
   const steps: StepDefinition[] = run.squad.pipeline.steps.map((s) => ({
     id: s.id,
     agentId: s.agentId ?? '',
     order: s.order,
     label: s.label,
     execution: s.type as StepDefinition['execution'],
+    instructions: s.instructions ?? undefined,
+    contextLoading: s.contextLoading ? JSON.parse(s.contextLoading as string) : undefined,
+    outputExample: s.outputExample ?? undefined,
+    formatRef: s.formatRef ?? undefined,
+    skillRefs: s.skillRefs ? JSON.parse(s.skillRefs as string) : undefined,
+    modelTier: s.modelTier ?? undefined,
     vetoConditions: s.vetoConditions ? JSON.parse(s.vetoConditions as string) : undefined,
     onReject: s.onReject && s.onReject !== 'retry' ? s.onReject : undefined,
   }))
 
   if (steps.length === 0) {
-    await failRun(runId, 'Pipeline não tem steps com agentes configurados.')
+    await failRun(runId, 'Pipeline nao tem steps com agentes configurados.')
     return
   }
 
@@ -176,11 +234,12 @@ export async function executeRun(runId: string): Promise<void> {
     runStepMap.set(rs.stepId, rs.id)
   }
 
-  // Buscar best practices filtradas por relevância ao agente
+  // ================================================================
+  // BEST PRACTICES — filtrar por relevancia ao agente + format
+  // ================================================================
   const allBestPractices = await prisma.bestPractice.findMany()
   const bpMap = new Map<string, string[]>()
 
-  // Mapa de role keywords → discipline names para matching
   const roleDisciplineMap: Record<string, string[]> = {
     research: ['Researching', 'Data Analysis'],
     researcher: ['Researching', 'Data Analysis'],
@@ -221,18 +280,15 @@ export async function executeRun(runId: string): Promise<void> {
     // 1. Match por format do step (platform best practices)
     const formats = stepFormatsByAgent.get(agent.id) ?? []
     for (const format of formats) {
-      // format pode ser: "instagram-feed", "blog-post", "linkedin-post", "youtube-script", etc.
       const parts = format.split('-')
       for (const bp of allBestPractices) {
         if (bp.category === 'platform') {
-          // Match por platform + contentType (ex: "instagram" + "feed")
           const matchesPlatform = parts.some((p) => bp.platform?.toLowerCase() === p)
           const matchesContent = parts.some((p) => bp.contentType?.toLowerCase() === p)
           if (matchesPlatform || matchesContent) {
             relevantBps.push(`[${bp.name}]: ${bp.content}`)
           }
         }
-        // Match por discipline name (ex: format "review" → discipline "Review")
         if (bp.category === 'discipline' && bp.name.toLowerCase() === format.replace(/-/g, ' ')) {
           relevantBps.push(`[${bp.name}]: ${bp.content}`)
         }
@@ -262,18 +318,54 @@ export async function executeRun(runId: string): Promise<void> {
     }
   }
 
-  // Buscar skill instructions por agente
+  // ================================================================
+  // SKILL INSTRUCTIONS — usar campo `instructions` (o SKILL.md inteiro)
+  // ================================================================
   const skillMap = new Map<string, string[]>()
+  const skillInstructionsByName = new Map<string, string>()
+
   for (const agent of run.squad.agents) {
     const instructions = agent.skills
-      .filter((s) => s.skill.implementation)
-      .map((s) => `[${s.skill.name}]: ${s.skill.implementation}`)
+      .filter((s) => s.skill.instructions || s.skill.implementation)
+      .map((s) => {
+        // Preferir instructions (campo novo rico) sobre implementation (legado)
+        const content = s.skill.instructions || s.skill.implementation || ''
+        return `[${s.skill.name}]: ${content}`
+      })
     if (instructions.length > 0) {
       skillMap.set(agent.id, instructions)
     }
+
+    // Indexar por nome para step-level injection
+    for (const s of agent.skills) {
+      const content = s.skill.instructions || s.skill.implementation
+      if (content) {
+        skillInstructionsByName.set(s.skill.name, content)
+      }
+    }
   }
 
-  // Carregar memórias de runs anteriores
+  // ================================================================
+  // FORMAT PRACTICES — mapa de formatRef → best practice content
+  // ================================================================
+  const formatPractices = new Map<string, string>()
+  for (const bp of allBestPractices) {
+    if (bp.category === 'platform' && bp.platform && bp.contentType) {
+      const key = `${bp.platform}-${bp.contentType}`
+      formatPractices.set(key, bp.content)
+    }
+  }
+
+  // ================================================================
+  // SQUAD DATA — dados de referencia (quality-criteria, tone-of-voice, etc.)
+  // ================================================================
+  const squadData: string[] = run.squad.data.map((d) =>
+    `[${d.name}]: ${d.content}`
+  )
+
+  // ================================================================
+  // MEMORIAS de runs anteriores
+  // ================================================================
   let memories: string[] = []
   try {
     memories = run.squad.memories ? JSON.parse(run.squad.memories) : []
@@ -285,14 +377,15 @@ export async function executeRun(runId: string): Promise<void> {
   const input = run.input ? JSON.parse(run.input as string) : {}
   let inputText = typeof input === 'string' ? input : (input.prompt ?? input.text ?? JSON.stringify(input))
 
-  // Garantir que o input nunca seja vazio — usar o nome/descrição do squad como contexto
   if (!inputText || inputText === '{}' || inputText.trim() === '') {
     const desc = run.squad.description ?? run.squad.name
     inputText = `Execute o squad "${run.squad.name}". Contexto: ${desc}`
   }
   const totalSteps = steps.length
 
-  // Criar o runner com callbacks integrados ao WS e DB
+  // ================================================================
+  // CRIAR RUNNER COM CALLBACKS
+  // ================================================================
   const runner = new PipelineRunner({
     onStatusChange: async (status) => {
       wsServer.emitRunStatus(runId, status, runner.getCurrentStepIndex(), totalSteps)
@@ -312,7 +405,7 @@ export async function executeRun(runId: string): Promise<void> {
         step.id,
         runStepId,
         agent?.name ?? 'Agent',
-        agent?.icon ?? '🤖',
+        agent?.icon ?? '',
         step.label,
         stepIndex,
         totalSteps,
@@ -378,33 +471,45 @@ export async function executeRun(runId: string): Promise<void> {
 
       wsServer.emitHandoffStart(
         runId,
-        { id: fromAgentId, name: fromAgent?.name ?? 'Agent', icon: fromAgent?.icon ?? '🤖' },
-        { id: toAgentId, name: toAgent?.name ?? 'Agent', icon: toAgent?.icon ?? '🤖' },
+        { id: fromAgentId, name: fromAgent?.name ?? 'Agent', icon: fromAgent?.icon ?? '' },
+        { id: toAgentId, name: toAgent?.name ?? 'Agent', icon: toAgent?.icon ?? '' },
         `Handoff de ${fromAgent?.name ?? 'Agent'} para ${toAgent?.name ?? 'Agent'}`,
       )
 
       setTimeout(() => wsServer.emitHandoffEnd(runId), 500)
     },
 
-    onCheckpoint: async (step, previousOutput) => {
+    onCheckpoint: async (step, previousOutput, checkpointRequest) => {
       const runStepId = runStepMap.get(step.id) ?? step.id
 
-      // Marcar step como running
       prisma.runStep.update({
         where: { id: runStepId },
         data: { status: 'running', startedAt: new Date() },
       }).catch(() => {})
 
-      wsServer.emitCheckpointRequest(runId, runStepId, step.label, previousOutput)
+      // Emitir checkpoint com tipo, pergunta e opcoes
+      wsServer.emitCheckpointRequest(
+        runId,
+        runStepId,
+        step.label,
+        previousOutput,
+        checkpointRequest?.type ?? 'approval',
+        checkpointRequest?.question,
+        checkpointRequest?.options,
+        checkpointRequest?.instructions,
+      )
 
       const response = await wsServer.waitForCheckpoint(runStepId)
 
-      // Atualizar step no DB
+      const outputText = response.selected
+        ? `Selecionado: ${response.selected}${response.feedback ? ' — ' + response.feedback : ''}`
+        : `${response.action}${response.feedback ? ': ' + response.feedback : ''}`
+
       prisma.runStep.update({
         where: { id: runStepId },
         data: {
           status: 'completed',
-          output: `${response.action}${response.feedback ? ': ' + response.feedback : ''}`,
+          output: outputText,
           completedAt: new Date(),
         },
       }).catch(() => {})
@@ -412,6 +517,7 @@ export async function executeRun(runId: string): Promise<void> {
       return {
         action: response.action,
         feedback: response.feedback,
+        selected: response.selected,
       }
     },
 
@@ -422,7 +528,6 @@ export async function executeRun(runId: string): Promise<void> {
 
       const response = await wsServer.waitForHumanInput(runStepId)
 
-      // Gravar a interacao como log
       await prisma.runLog.create({
         data: {
           runStepId,
@@ -442,7 +547,6 @@ export async function executeRun(runId: string): Promise<void> {
 
       const response = await wsServer.waitForReviewRejectResponse(runStepId)
 
-      // Gravar a decisao como log
       await prisma.runLog.create({
         data: {
           runStepId,
@@ -478,13 +582,15 @@ export async function executeRun(runId: string): Promise<void> {
     bestPractices: bpMap,
     skillInstructions: skillMap,
     memories,
+    squadData: squadData.length > 0 ? squadData : undefined,
+    formatPractices,
+    skillInstructionsByName,
   }
 
   try {
     const result = await runner.run(steps, pipelineContext)
 
     const durationMs = Date.now() - startTime
-    const lastOutput = Array.from(result.outputs.values()).pop() ?? ''
     const wasCancelled = runner.getStatus() === 'cancelled'
     const finalStatus = wasCancelled ? 'cancelled' : 'completed'
 
@@ -497,14 +603,15 @@ export async function executeRun(runId: string): Promise<void> {
         status: finalStatus,
         totalTokens: result.totalTokens.total,
         totalCost: result.totalCost,
+        duration: durationMs,
         completedAt: new Date(),
       },
     })
 
     wsServer.emitRunMetrics(runId, result.totalTokens.total, result.totalCost, durationMs)
-    wsServer.emitRunComplete(runId, finalStatus, result.totalTokens.total, result.totalCost, durationMs, lastOutput)
+    wsServer.emitRunComplete(runId, finalStatus, result.totalTokens.total, result.totalCost, durationMs)
 
-    // Gerar memórias do run e salvar no squad
+    // Gerar memorias do run e salvar no squad
     try {
       const newMemories = generateRunMemories(
         inputText,
@@ -516,7 +623,6 @@ export async function executeRun(runId: string): Promise<void> {
         durationMs,
       )
       if (newMemories.length > 0) {
-        // Manter no máximo 20 memórias (as mais recentes)
         const updatedMemories = [...memories, ...newMemories].slice(-20)
         await prisma.squad.update({
           where: { id: run.squadId },
@@ -524,7 +630,7 @@ export async function executeRun(runId: string): Promise<void> {
         })
       }
     } catch {
-      // Não falhar o run por causa de memórias
+      // Nao falhar o run por causa de memorias
     }
   } catch (err) {
     const durationMs = Date.now() - startTime

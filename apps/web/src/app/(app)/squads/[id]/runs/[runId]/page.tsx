@@ -71,7 +71,11 @@ interface LiveStep {
   tokensUsed: number; cost: number; durationMs: number
 }
 
-interface CheckpointRequest { runStepId: string; stepLabel: string; previousOutput: string }
+interface CheckpointRequest {
+  runStepId: string; stepLabel: string; previousOutput: string
+  checkpointType: 'approval' | 'selection' | 'input'
+  question?: string; options?: string[]; instructions?: string
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -593,58 +597,139 @@ function CheckpointModal({
   onRespond,
 }: {
   checkpoint: CheckpointRequest
-  onRespond: (action: 'approve' | 'adjust' | 'redo', feedback?: string) => void
+  onRespond: (action: 'approve' | 'adjust' | 'redo', feedback?: string, selected?: string) => void
 }) {
   const [feedback, setFeedback] = useState('')
+  const [selectedOption, setSelectedOption] = useState<string | null>(null)
+  const isSelection = checkpoint.checkpointType === 'selection' && checkpoint.options && checkpoint.options.length > 0
+  const isInput = checkpoint.checkpointType === 'input'
+  const question = checkpoint.question ?? checkpoint.stepLabel
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-8">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center gap-4 p-6 border-b border-slate-200">
-          <div className="size-12 rounded-xl bg-amber-100 flex items-center justify-center text-amber-600 shrink-0">
+          <div className={`size-12 rounded-xl flex items-center justify-center shrink-0 ${
+            isSelection ? 'bg-[#0066ff]/10 text-[#0066ff]' : isInput ? 'bg-purple-100 text-purple-600' : 'bg-amber-100 text-amber-600'
+          }`}>
             <ShieldCheck className="size-6" />
           </div>
           <div className="flex-1">
-            <h3 className="text-lg font-bold text-slate-900">Checkpoint: {checkpoint.stepLabel}</h3>
-            <p className="text-sm text-slate-500">Review the agent output before proceeding.</p>
+            <h3 className="text-lg font-bold text-slate-900">{question}</h3>
+            <p className="text-sm text-slate-500">
+              {isSelection ? 'Escolha uma opcao para continuar.' : isInput ? 'Sua resposta sera usada pelo proximo agente.' : 'Revise o output antes de prosseguir.'}
+            </p>
           </div>
         </div>
 
-        {/* Output (markdown-like formatting) */}
-        <div className="flex-1 overflow-y-auto p-6">
-          {checkpoint.previousOutput ? (
-            <div className="prose prose-sm prose-slate max-w-none bg-slate-50 rounded-xl p-6 border border-slate-200 font-mono text-sm whitespace-pre-wrap leading-relaxed">
-              {checkpoint.previousOutput}
+        {/* Content area */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          {/* Previous output (for approval type) */}
+          {checkpoint.previousOutput && !isSelection && !isInput && (
+            <div className="prose prose-sm prose-slate max-w-none bg-slate-50 rounded-xl p-6 border border-slate-200">
+              <Markdown>{checkpoint.previousOutput}</Markdown>
             </div>
-          ) : (
-            <p className="text-sm text-slate-400 text-center py-12">No output to review.</p>
+          )}
+
+          {/* Previous output summary (for selection/input — show condensed) */}
+          {checkpoint.previousOutput && (isSelection || isInput) && (
+            <details className="group">
+              <summary className="text-xs font-bold text-slate-400 uppercase tracking-wider cursor-pointer hover:text-slate-600">
+                Output do step anterior
+              </summary>
+              <div className="mt-2 prose prose-sm prose-slate max-w-none bg-slate-50 rounded-xl p-4 border border-slate-200 max-h-48 overflow-y-auto">
+                <Markdown>{checkpoint.previousOutput}</Markdown>
+              </div>
+            </details>
+          )}
+
+          {/* Selection options */}
+          {isSelection && (
+            <div className="space-y-2">
+              {checkpoint.options!.map((option, i) => (
+                <button
+                  key={i}
+                  onClick={() => setSelectedOption(option)}
+                  className={`w-full text-left p-4 rounded-xl border-2 transition-all ${
+                    selectedOption === option
+                      ? 'border-[#0066ff] bg-[#0066ff]/5 ring-4 ring-[#0066ff]/10'
+                      : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`size-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                      selectedOption === option ? 'border-[#0066ff] bg-[#0066ff]' : 'border-slate-300'
+                    }`}>
+                      {selectedOption === option && <div className="size-2 rounded-full bg-white" />}
+                    </div>
+                    <span className={`text-sm ${selectedOption === option ? 'font-bold text-slate-900' : 'text-slate-700'}`}>
+                      {option}
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* No output for input type — just the question above is enough */}
+          {isInput && !checkpoint.previousOutput && (
+            <p className="text-sm text-slate-400 text-center py-6">Digite sua resposta abaixo.</p>
           )}
         </div>
 
-        {/* Feedback + Actions */}
+        {/* Feedback/Input + Actions */}
         <div className="p-6 border-t border-slate-200 space-y-4">
           <textarea
             value={feedback}
             onChange={(e) => setFeedback(e.target.value)}
-            placeholder="Optional feedback for the agent..."
-            rows={3}
+            placeholder={
+              isInput ? 'Digite sua resposta...'
+                : isSelection ? 'Observacao adicional (opcional)...'
+                  : 'Feedback opcional para o agente...'
+            }
+            rows={isInput ? 4 : 2}
             className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-[#0066ff] focus:ring-4 focus:ring-[#0066ff]/10 outline-none resize-none text-sm"
           />
           <div className="flex items-center justify-end gap-3">
+            {!isInput && (
+              <button
+                onClick={() => onRespond('redo', feedback || undefined)}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-xl text-sm font-bold transition-colors flex items-center gap-2"
+              >
+                <RotateCcw className="size-4" />
+                Redo
+              </button>
+            )}
             <button
-              onClick={() => onRespond('redo', feedback || undefined)}
-              className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-xl text-sm font-bold transition-colors flex items-center gap-2"
+              onClick={() => {
+                if (isSelection && selectedOption) {
+                  onRespond('approve', feedback || undefined, selectedOption)
+                } else if (isInput && feedback.trim()) {
+                  onRespond('approve', feedback.trim())
+                } else {
+                  onRespond('approve', feedback || undefined)
+                }
+              }}
+              disabled={(isSelection && !selectedOption) || (isInput && !feedback.trim())}
+              className="bg-[#0066ff] hover:bg-[#0066ff]/90 text-white px-6 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-[#0066ff]/25 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <RotateCcw className="size-4" />
-              Redo
-            </button>
-            <button
-              onClick={() => onRespond('approve', feedback || undefined)}
-              className="bg-[#0066ff] hover:bg-[#0066ff]/90 text-white px-6 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-[#0066ff]/25 transition-all flex items-center gap-2"
-            >
-              <CheckCircle2 className="size-4" />
-              Approve
+              {isSelection ? (
+                <>
+                  <CheckCircle2 className="size-4" />
+                  Confirmar
+                </>
+              ) : isInput ? (
+                <>
+                  <SendIcon className="size-4" />
+                  Enviar
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="size-4" />
+                  Approve
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -906,7 +991,10 @@ export default function RunViewPage({ params }: { params: Promise<{ id: string; 
         if (pending) {
           const idx = data.steps.indexOf(pending)
           const prev = idx > 0 ? data.steps[idx - 1] : null
-          setCheckpoint({ runStepId: pending.id, stepLabel: pending.step.label, previousOutput: prev?.output ?? '' })
+          setCheckpoint({
+            runStepId: pending.id, stepLabel: pending.step.label,
+            previousOutput: prev?.output ?? '', checkpointType: 'approval',
+          })
         }
       }
 
@@ -1023,7 +1111,15 @@ export default function RunViewPage({ params }: { params: Promise<{ id: string; 
     unsubs.push(subscribe(WS_EVENTS.CHECKPOINT_REQUEST, (p) => {
       const payload = p as CheckpointRequestPayload
       if (payload.runId === runId) {
-        setCheckpoint({ runStepId: payload.runStepId, stepLabel: payload.stepLabel, previousOutput: payload.previousOutput })
+        setCheckpoint({
+          runStepId: payload.runStepId,
+          stepLabel: payload.stepLabel,
+          previousOutput: payload.previousOutput,
+          checkpointType: payload.checkpointType ?? 'approval',
+          question: payload.question,
+          options: payload.options,
+          instructions: payload.instructions,
+        })
       }
     }))
 
@@ -1052,12 +1148,12 @@ export default function RunViewPage({ params }: { params: Promise<{ id: string; 
     setCheckpoint(null); setLiveStatus('cancelled')
   }, [runId])
 
-  const handleCheckpointResponse = useCallback(async (action: 'approve' | 'adjust' | 'redo', feedback?: string) => {
+  const handleCheckpointResponse = useCallback(async (action: 'approve' | 'adjust' | 'redo', feedback?: string, selected?: string) => {
     if (!checkpoint) return
     try {
       await fetch(`/api/runs/${runId}/checkpoint`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ runStepId: checkpoint.runStepId, action, feedback }),
+        body: JSON.stringify({ runStepId: checkpoint.runStepId, action, feedback, selected }),
       })
       setCheckpoint(null)
     } catch {

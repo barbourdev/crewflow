@@ -76,6 +76,7 @@ class CrewFlowWSServer {
         for (const pending of [this.pendingCheckpoints, this.pendingHumanInputs, this.pendingReviewRejects]) {
           const msg = pending.get(runId)
           if (msg && client.ws.readyState === WebSocket.OPEN) {
+            console.log(`[WS] Resending pending ${msg.event} to client subscribing to ${runId}`)
             this.sendTo(client.ws, msg)
           }
         }
@@ -280,10 +281,14 @@ class CrewFlowWSServer {
     runStepId: string,
     stepLabel: string,
     previousOutput: string,
+    checkpointType: 'approval' | 'selection' | 'input' = 'approval',
+    question?: string,
+    options?: string[],
+    instructions?: string,
   ) {
     const message: WSMessage = {
       event: WS_EVENTS.CHECKPOINT_REQUEST,
-      payload: { runId, runStepId, stepLabel, previousOutput },
+      payload: { runId, runStepId, stepLabel, previousOutput, checkpointType, question, options, instructions },
     }
     // Guardar como pendente para enviar a novos subscribers
     this.pendingCheckpoints.set(runId, message)

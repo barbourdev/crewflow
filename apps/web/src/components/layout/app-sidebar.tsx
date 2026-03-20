@@ -8,6 +8,7 @@ import {
   Users,
   FileText,
   BarChart3,
+  BookOpen,
   Settings,
   ChevronsUpDown,
 } from 'lucide-react'
@@ -25,6 +26,7 @@ const navItems = [
   { title: 'Squads', href: '/squads', icon: Users },
   { title: 'Templates', href: '/templates', icon: FileText },
   { title: 'Metrics', href: '/metrics', icon: BarChart3 },
+  { title: 'Docs', href: '/docs', icon: BookOpen },
 ]
 
 export function AppSidebar() {
