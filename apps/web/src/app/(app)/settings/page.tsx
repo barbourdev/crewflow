@@ -14,6 +14,7 @@ import { AppHeader } from '@/components/layout/app-header'
 import { ErrorBanner } from '@/components/shared/error-banner'
 import { GlassPanel } from '@/components/shared/glass-panel'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useTranslation } from '@/lib/i18n'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -105,6 +106,7 @@ function SettingsSkeleton() {
 // ---------------------------------------------------------------------------
 
 export default function SettingsPage() {
+  const { t } = useTranslation()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -209,7 +211,7 @@ export default function SettingsPage() {
   if (loading) {
     return (
       <>
-        <AppHeader title="Settings" description="Manage your workspace and integration preferences" />
+        <AppHeader title={t.settings.title} description={t.settings.subtitle} />
         <div className="p-8 lg:p-12">
           <SettingsSkeleton />
         </div>
@@ -230,7 +232,7 @@ export default function SettingsPage() {
           {success && (
             <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
               <CheckCircle2 className="size-4 shrink-0" />
-              Settings saved successfully.
+              {t.settings.saved}
             </div>
           )}
 
@@ -240,12 +242,12 @@ export default function SettingsPage() {
           <GlassPanel accent className="p-8">
             <div className="flex items-center gap-2 mb-6 text-[#0066ff]">
               <User className="size-5" />
-              <h3 className="text-xl font-bold">Profile</h3>
+              <h3 className="text-xl font-bold">{t.settings.profile}</h3>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="md:col-span-2">
-                <label className="block text-sm font-bold text-slate-700 mb-2">Full Name</label>
+                <label className="block text-sm font-bold text-slate-700 mb-2">{t.settings.fullName}</label>
                 <input
                   type="text"
                   value={name}
@@ -254,7 +256,7 @@ export default function SettingsPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">Language</label>
+                <label className="block text-sm font-bold text-slate-700 mb-2">{t.settings.language}</label>
                 <select
                   value={language}
                   onChange={(e) => setLanguage(e.target.value)}
@@ -274,14 +276,14 @@ export default function SettingsPage() {
           <GlassPanel accent className="p-8">
             <div className="flex items-center gap-2 mb-6 text-[#0066ff]">
               <Key className="size-5" />
-              <h3 className="text-xl font-bold">API Integrations</h3>
+              <h3 className="text-xl font-bold">{t.settings.apiIntegrations}</h3>
             </div>
 
             <div className="space-y-6">
               {/* Anthropic */}
               <div>
                 <div className="flex justify-between items-end mb-2">
-                  <label className="block text-sm font-bold text-slate-700">Anthropic API Key</label>
+                  <label className="block text-sm font-bold text-slate-700">{t.settings.anthropicKey}</label>
                   <ValidationLabel validation={anthropicValidation} />
                 </div>
                 <div className="flex gap-3">
@@ -316,7 +318,7 @@ export default function SettingsPage() {
               {/* OpenAI */}
               <div>
                 <div className="flex justify-between items-end mb-2">
-                  <label className="block text-sm font-bold text-slate-700">OpenAI API Key</label>
+                  <label className="block text-sm font-bold text-slate-700">{t.settings.openaiKey}</label>
                   <ValidationLabel validation={openaiValidation} />
                 </div>
                 <div className="flex gap-3">
@@ -357,7 +359,7 @@ export default function SettingsPage() {
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-2 text-[#0066ff]">
                 <SlidersHorizontal className="size-5" />
-                <h3 className="text-xl font-bold">Advanced Options</h3>
+                <h3 className="text-xl font-bold">{t.settings.advanced}</h3>
               </div>
               <span className="text-xs font-bold bg-slate-100 px-2 py-1 rounded uppercase tracking-wider text-slate-500">
                 Platform Tweaks
@@ -367,16 +369,16 @@ export default function SettingsPage() {
             <div className="space-y-4">
               <div className="flex items-center justify-between p-4 bg-white/40 rounded-lg border border-[#0066ff]/5">
                 <div>
-                  <p className="font-bold text-slate-800">Experimental Beta Features</p>
-                  <p className="text-sm text-slate-500">Access unreleased AI agent capabilities</p>
+                  <p className="font-bold text-slate-800">{t.settings.betaFeatures}</p>
+                  <p className="text-sm text-slate-500">{t.settings.betaFeaturesDesc}</p>
                 </div>
                 <Toggle checked={betaFeatures} onChange={setBetaFeatures} />
               </div>
 
               <div className="flex items-center justify-between p-4 bg-white/40 rounded-lg border border-[#0066ff]/5">
                 <div>
-                  <p className="font-bold text-slate-800">Verbose Logging</p>
-                  <p className="text-sm text-slate-500">Enable detailed API response debugging</p>
+                  <p className="font-bold text-slate-800">{t.settings.verboseLogging}</p>
+                  <p className="text-sm text-slate-500">{t.settings.verboseLoggingDesc}</p>
                 </div>
                 <Toggle checked={verboseLogging} onChange={setVerboseLogging} />
               </div>
@@ -391,7 +393,7 @@ export default function SettingsPage() {
               onClick={handleDiscard}
               className="px-8 py-4 text-slate-500 font-bold hover:text-slate-800 transition-colors"
             >
-              Discard changes
+              {t.common.cancel}
             </button>
             <button
               onClick={handleSave}
@@ -401,10 +403,10 @@ export default function SettingsPage() {
               {saving ? (
                 <span className="flex items-center gap-2">
                   <Loader2 className="size-4 animate-spin" />
-                  Saving...
+                  {t.settings.saving}
                 </span>
               ) : (
-                'Save Changes'
+                t.common.save
               )}
             </button>
           </div>
