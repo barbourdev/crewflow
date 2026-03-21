@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { AppHeader } from '@/components/layout/app-header'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useTranslation } from '@/lib/i18n'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -162,6 +163,7 @@ function SquadCardSkeleton() {
 const PAGE_SIZE = 9 // 3x3 grid, ultimo slot e o "Create New Squad"
 
 export default function SquadsPage() {
+  const { t } = useTranslation()
   const [squads, setSquads] = useState<Squad[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -202,15 +204,15 @@ export default function SquadsPage() {
   return (
     <>
       <AppHeader
-        title="Squads"
-        description="Manage and monitor your autonomous AI workforces."
+        title={t.squads.title}
+        description={t.squads.subtitle}
         actions={
           <div className="flex items-center gap-3">
             <div className="relative hidden sm:block">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
               <input
                 type="text"
-                placeholder="Search squads..."
+                placeholder={t.squads.searchPlaceholder}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-10 pr-4 py-2 bg-slate-100 border-none rounded-xl text-sm w-72 focus:ring-2 focus:ring-[#0066ff]/50 outline-none transition-all"
@@ -221,7 +223,7 @@ export default function SquadsPage() {
               className="bg-[#0066ff] text-white text-sm px-4 py-1.5 rounded-lg font-bold hover:bg-[#0066ff]/90 flex items-center gap-2 shadow-lg shadow-[#0066ff]/20"
             >
               <Plus className="size-3.5" />
-              New Squad
+              {t.dashboard.newSquad}
             </Link>
           </div>
         }
@@ -250,16 +252,16 @@ export default function SquadsPage() {
             <div className="w-16 h-16 rounded-full bg-[#0066ff]/10 flex items-center justify-center mb-4">
               <Users className="size-8 text-[#0066ff]" />
             </div>
-            <h3 className="text-lg font-bold mb-1">No squads yet</h3>
+            <h3 className="text-lg font-bold mb-1">{t.squads.noSquads}</h3>
             <p className="text-sm text-slate-500 max-w-xs mb-6">
-              Create your first squad to start orchestrating AI agents.
+              {t.squads.createSquad}
             </p>
             <Link
               href="/squads/new"
               className="bg-[#0066ff] text-white text-sm px-6 py-2.5 rounded-lg font-bold hover:bg-[#0066ff]/90 flex items-center gap-2 shadow-lg shadow-[#0066ff]/20"
             >
               <Plus className="size-4" />
-              Create Squad
+              {t.squads.createSquad}
             </Link>
           </div>
         ) : (
@@ -275,8 +277,8 @@ export default function SquadsPage() {
                   <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 group-hover:bg-[#0066ff]/10 group-hover:text-[#0066ff] transition-colors mb-3">
                     <Plus className="size-7" />
                   </div>
-                  <h3 className="font-bold text-slate-500 group-hover:text-[#0066ff]">Create New Squad</h3>
-                  <p className="text-slate-400 text-xs mt-1">Start from scratch or a template</p>
+                  <h3 className="font-bold text-slate-500 group-hover:text-[#0066ff]">{t.dashboard.createNewSquad}</h3>
+                  <p className="text-slate-400 text-xs mt-1">{t.dashboard.startFromSquad}</p>
                 </div>
               </Link>
             </div>
