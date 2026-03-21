@@ -16,38 +16,42 @@ import {
   Check,
 } from 'lucide-react'
 import { AppHeader } from '@/components/layout/app-header'
+import { useTranslation } from '@/lib/i18n'
+import type { TranslationKeys } from '@/lib/i18n'
 
 // ---------------------------------------------------------------------------
 // Doc navigation structure
 // ---------------------------------------------------------------------------
 
-const CATEGORIES = [
-  {
-    name: 'Introduction',
-    icon: BookOpen,
-    items: [
-      { slug: 'getting-started', title: 'Getting Started' },
-      { slug: 'architecture', title: 'Architecture' },
-    ],
-  },
-  {
-    name: 'Reference',
-    icon: FileCode2,
-    items: [
-      { slug: 'api-reference', title: 'API Reference' },
-      { slug: 'spec', title: 'Specification' },
-    ],
-  },
-  {
-    name: 'Community',
-    icon: Users,
-    items: [
-      { slug: 'contributing', title: 'Contributing' },
-      { slug: 'changelog', title: 'Changelog' },
-      { slug: 'code-of-conduct', title: 'Code of Conduct' },
-    ],
-  },
-]
+function getCategories(t: TranslationKeys) {
+  return [
+    {
+      name: t.docs.introduction,
+      icon: BookOpen,
+      items: [
+        { slug: 'getting-started', title: t.docs.gettingStarted },
+        { slug: 'architecture', title: t.docs.architecture },
+      ],
+    },
+    {
+      name: t.docs.reference,
+      icon: FileCode2,
+      items: [
+        { slug: 'api-reference', title: t.docs.apiReference },
+        { slug: 'spec', title: t.docs.specification },
+      ],
+    },
+    {
+      name: t.docs.community,
+      icon: Users,
+      items: [
+        { slug: 'contributing', title: t.docs.contributing },
+        { slug: 'changelog', title: t.docs.changelog },
+        { slug: 'code-of-conduct', title: t.docs.codeOfConduct },
+      ],
+    },
+  ]
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -81,7 +85,9 @@ function DocsSidebar({ currentSlug, searchQuery, onSearch }: {
   searchQuery: string
   onSearch: (q: string) => void
 }) {
-  const filteredCategories = CATEGORIES.map((cat) => ({
+  const { t } = useTranslation()
+  const categories = getCategories(t)
+  const filteredCategories = categories.map((cat) => ({
     ...cat,
     items: cat.items.filter((item) =>
       item.title.toLowerCase().includes(searchQuery.toLowerCase())
@@ -96,7 +102,7 @@ function DocsSidebar({ currentSlug, searchQuery, onSearch }: {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-slate-400" />
           <input
             type="text"
-            placeholder="Search docs..."
+            placeholder={t.docs.searchPlaceholder}
             value={searchQuery}
             onChange={(e) => onSearch(e.target.value)}
             className="w-full pl-9 pr-3 py-2 text-sm bg-white/70 border border-slate-200/60 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0066ff]/20 focus:border-[#0066ff]/40 placeholder:text-slate-400"
@@ -269,14 +275,16 @@ function MarkdownContent({ content }: { content: string }) {
 // ---------------------------------------------------------------------------
 
 function OnThisPage({ currentSlug }: { currentSlug: string }) {
+  const { t } = useTranslation()
+  const categories = getCategories(t)
   return (
     <aside className="w-56 shrink-0 overflow-y-auto hidden xl:block">
       <div className="py-8 pr-4">
         <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-4 px-3">
-          On this page
+          {t.docs.onThisPage}
         </p>
         <nav className="space-y-4">
-          {CATEGORIES.map((category) => (
+          {categories.map((category) => (
             <div key={category.name}>
               <p className="px-3 text-xs font-bold text-slate-700 mb-1">
                 {category.name}
@@ -314,6 +322,8 @@ function OnThisPage({ currentSlug }: { currentSlug: string }) {
 
 export default function DocSlugPage() {
   const { slug } = useParams<{ slug: string }>()
+  const { t } = useTranslation()
+  const categories = getCategories(t)
   const [content, setContent] = useState('')
   const [title, setTitle] = useState('')
   const [category, setCategory] = useState('')
@@ -340,14 +350,14 @@ export default function DocSlugPage() {
   }, [slug])
 
   // Find prev/next docs
-  const allDocs = CATEGORIES.flatMap((c) => c.items)
+  const allDocs = categories.flatMap((c) => c.items)
   const currentIndex = allDocs.findIndex((d) => d.slug === slug)
   const prevDoc = currentIndex > 0 ? allDocs[currentIndex - 1] : null
   const nextDoc = currentIndex < allDocs.length - 1 ? allDocs[currentIndex + 1] : null
 
   return (
     <div className="flex flex-col h-screen">
-      <AppHeader title="Documentation" description={title || 'Docs'} />
+      <AppHeader title={t.docs.title} description={title || t.nav.docs} />
 
       <div className="flex flex-1 min-h-0">
         {/* Left sidebar */}
@@ -371,7 +381,7 @@ export default function DocSlugPage() {
                 <BookOpen className="size-8 text-red-300 mx-auto mb-3" />
                 <p className="text-red-700 font-medium">{error}</p>
                 <Link href="/docs/getting-started" className="text-sm text-[#0066ff] hover:underline mt-2 inline-block">
-                  Go to Getting Started
+                  {t.docs.goToGettingStarted}
                 </Link>
               </div>
             ) : (
@@ -397,7 +407,7 @@ export default function DocSlugPage() {
                       href={`/docs/${prevDoc.slug}`}
                       className="flex-1 group rounded-xl border border-slate-200/60 bg-white/50 hover:bg-white/80 hover:border-[#0066ff]/30 p-4 transition-all"
                     >
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Previous</p>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">{t.common.previous}</p>
                       <p className="text-sm font-semibold text-slate-700 group-hover:text-[#0066ff] transition-colors">
                         {prevDoc.title}
                       </p>
@@ -408,7 +418,7 @@ export default function DocSlugPage() {
                       href={`/docs/${nextDoc.slug}`}
                       className="flex-1 group rounded-xl border border-slate-200/60 bg-white/50 hover:bg-white/80 hover:border-[#0066ff]/30 p-4 transition-all text-right"
                     >
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Next</p>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">{t.common.next}</p>
                       <p className="text-sm font-semibold text-slate-700 group-hover:text-[#0066ff] transition-colors">
                         {nextDoc.title}
                       </p>
