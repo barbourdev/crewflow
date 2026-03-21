@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db'
 import { wsServer } from '@/lib/ws-server'
 import { createProvider } from '@crewflow/ai'
 import type { AIProvider, AIMessage } from '@crewflow/ai'
+import { RESEARCH_TOOLS } from '@crewflow/engine'
 
 // ============================================================================
 // TYPES
@@ -430,7 +431,7 @@ async function phaseDiscovery(session: ArchitectSession): Promise<void> {
   })
 
   if (platformBps.length > 0) {
-    const formatOptions = platformBps.map((bp) =>
+    const formatOptions = platformBps.map((bp: any) =>
       `${bp.platform}/${bp.contentType} — ${bp.description?.slice(0, 60) ?? bp.name}`
     )
 
@@ -464,7 +465,7 @@ async function phaseBestPractices(session: ArchitectSession): Promise<void> {
   const audience = session.discovery.audience?.toLowerCase() ?? ''
   const search = purpose + ' ' + formats + ' ' + audience
 
-  const relevantBp = allBp.filter((bp) => {
+  const relevantBp = allBp.filter((bp: any) => {
     // Platform match
     if (bp.platform && (
       search.includes(bp.platform.toLowerCase()) ||
@@ -500,10 +501,10 @@ async function phaseBestPractices(session: ArchitectSession): Promise<void> {
     return false
   })
 
-  session.research.bestPractices = relevantBp.map((bp) => `[${bp.name}]: ${bp.content}`)
+  session.research.bestPractices = relevantBp.map((bp: any) => `[${bp.name}]: ${bp.content}`)
 
   emitProgress(session.id, 'best-practices',
-    `${relevantBp.length} boas praticas selecionadas: ${relevantBp.map((bp) => bp.name).join(', ')}`)
+    `${relevantBp.length} boas praticas selecionadas: ${relevantBp.map((bp: any) => bp.name).join(', ')}`)
 }
 
 // ============================================================================
@@ -521,6 +522,8 @@ async function phaseResearch(session: ArchitectSession, provider: AIProvider): P
     : ''
 
   const systemPrompt = `Voce eh um pesquisador de dominio especializado. Sua tarefa eh pesquisar profundamente sobre o dominio necessario para criar agentes IA que vao trabalhar neste contexto.
+
+IMPORTANTE: Voce tem acesso a ferramentas de pesquisa web (web_search e web_fetch). USE-AS para buscar informacoes REAIS e ATUALIZADAS sobre o dominio. Nao confie apenas no seu treinamento — pesquise na web para encontrar frameworks, tendencias, exemplos e melhores praticas ATUAIS.
 
 ## Objetivo
 Pesquisar o dominio para criar um squad de agentes que vai: ${session.discovery.purpose}
@@ -571,13 +574,65 @@ ${bpContext}${refsContext}`
     { role: 'user', content: `Pesquise sobre: ${session.discovery.purpose}\nPublico: ${session.discovery.audience}\nFormatos: ${session.discovery.targetFormats?.join(', ') ?? 'geral'}` },
   ]
 
-  const result = await provider.streamText(messages, (chunk) => {
-    emitOutput(session.id, 'research', chunk)
+  // Usar web_search tools para pesquisa real na web
+  const result = await provider.generateText(messages, {
+    tools: RESEARCH_TOOLS,
+    maxTokens: 8192,
   })
 
+  // Se o modelo quer usar tools, executar loop
+  let finalContent = result.content
+  if (result.toolCalls && result.toolCalls.length > 0) {
+    const { executeToolCall } = await import('@crewflow/engine')
+    const loopMessages = [...messages]
 
-  session.research.brief = result.content
-  emitProgress(session.id, 'research', `Research brief gerado (${result.content.length} chars, ${result.tokensUsed.total} tokens)`)
+    let currentResult = result
+    const maxRounds = 8
+
+    for (let round = 0; round < maxRounds; round++) {
+      if (!currentResult.toolCalls || currentResult.toolCalls.length === 0 || currentResult.stopReason !== 'tool_use') break
+
+      // Emitir progresso das pesquisas
+      for (const tc of currentResult.toolCalls) {
+        if (tc.name === 'web_search') {
+          emitOutput(session.id, 'research', `\n🔍 Pesquisando: "${tc.input.query}"...\n`)
+        } else if (tc.name === 'web_fetch') {
+          emitOutput(session.id, 'research', `\n📄 Lendo: ${tc.input.url}...\n`)
+        }
+      }
+
+      // Adicionar assistant message com tool calls
+      loopMessages.push({
+        role: 'assistant',
+        content: currentResult.content,
+        toolCalls: currentResult.toolCalls,
+      })
+
+      // Executar tools
+      for (const tc of currentResult.toolCalls) {
+        const toolResult = await executeToolCall(tc)
+        loopMessages.push({
+          role: 'tool_result',
+          content: toolResult,
+          toolCallId: tc.id,
+        })
+      }
+
+      // Continuar
+      currentResult = await provider.generateText(loopMessages, {
+        tools: RESEARCH_TOOLS,
+        maxTokens: 8192,
+      })
+    }
+
+    finalContent = currentResult.content
+    emitOutput(session.id, 'research', finalContent)
+  } else {
+    emitOutput(session.id, 'research', finalContent)
+  }
+
+  session.research.brief = finalContent
+  emitProgress(session.id, 'research', `Research brief gerado com pesquisa web (${finalContent.length} chars)`)
 }
 
 // ============================================================================
@@ -700,7 +755,7 @@ Dado este squad:
 - Formatos: ${session.discovery.targetFormats?.join(', ') ?? 'geral'}
 
 Skills disponiveis:
-${allSkills.map((s) => `- ${s.name} (${s.type}): ${s.description}`).join('\n')}
+${allSkills.map((s: any) => `- ${s.name} (${s.type}): ${s.description}`).join('\n')}
 
 Quais skills sao RELEVANTES para este squad? Liste apenas os nomes separados por virgula.
 Nao sugira skills que nao agregam valor direto.
@@ -717,7 +772,7 @@ Responda APENAS com os nomes separados por virgula, nada mais.`
   const suggested = suggestResult.content
     .split(',')
     .map((s) => s.trim().toLowerCase())
-    .filter((s) => allSkills.some((sk) => sk.name.toLowerCase() === s))
+    .filter((s: any) => allSkills.some((sk: any) => sk.name.toLowerCase() === s))
 
   session.skillDiscovery.suggestedSkills = suggested
 
@@ -729,7 +784,7 @@ Responda APENAS com os nomes separados por virgula, nada mais.`
 
   // Apresentar sugestoes ao usuario
   const skillOptions = suggested.map((name) => {
-    const skill = allSkills.find((s) => s.name.toLowerCase() === name.toLowerCase())
+    const skill = allSkills.find((s: any) => s.name.toLowerCase() === name.toLowerCase())
     return `${skill?.name ?? name} (${skill?.type ?? '?'}) — ${skill?.description ?? ''}`
   })
 
@@ -752,7 +807,7 @@ Responda APENAS com os nomes separados por virgula, nada mais.`
     // If user selected a specific option, extract skill name
     if (session.skillDiscovery.selectedSkills.length === 0) {
       const selectedSkillName = selected.split('(')[0]?.trim().toLowerCase()
-      const match = allSkills.find((s) => s.name.toLowerCase() === selectedSkillName)
+      const match = allSkills.find((s: any) => s.name.toLowerCase() === selectedSkillName)
       if (match) {
         session.skillDiscovery.selectedSkills = [match.name]
       }
@@ -1023,16 +1078,16 @@ async function phaseValidate(session: ArchitectSession, squadId: string): Promis
     const steps = squad.pipeline.steps
 
     totalChecks += 3
-    const hasReviewer = squad.agents.some((a) => a.role.toLowerCase().includes('review'))
+    const hasReviewer = squad.agents.some((a: any) => a.role.toLowerCase().includes('review'))
     if (hasReviewer) passCount++
     else issues.push('[Gate 2] Pipeline sem agente de review')
 
-    const hasCheckpoint = steps.some((s) => s.type === 'checkpoint')
+    const hasCheckpoint = steps.some((s: any) => s.type === 'checkpoint')
     if (hasCheckpoint) passCount++
     else issues.push('[Gate 2] Pipeline sem nenhum checkpoint')
 
     // Research Focus: primeiro step deve ser checkpoint (se tem researcher)
-    const hasResearcher = squad.agents.some((a) => a.role.toLowerCase().includes('research'))
+    const hasResearcher = squad.agents.some((a: any) => a.role.toLowerCase().includes('research'))
     if (hasResearcher) {
       totalChecks++
       if (steps[0]?.type === 'checkpoint') passCount++
@@ -1053,22 +1108,22 @@ async function phaseValidate(session: ArchitectSession, squadId: string): Promis
 
     // on_reject loops
     totalChecks++
-    const hasOnReject = steps.some((s) =>
-      s.onReject && s.onReject !== 'retry' && steps.some((t) => t.label === s.onReject)
+    const hasOnReject = steps.some((s: any) =>
+      s.onReject && s.onReject !== 'retry' && steps.some((t: any) => t.label === s.onReject)
     )
-    if (hasOnReject || steps.some((s) => s.type === 'checkpoint')) passCount++
+    if (hasOnReject || steps.some((s: any) => s.type === 'checkpoint')) passCount++
     else issues.push('[Gate 2] Pipeline sem loop de rejeicao (on_reject)')
   }
 
   // Gate 3: Squad Data (ADVISORY)
   totalChecks += 3
-  if (squad.data.some((d) => d.name === 'quality-criteria')) passCount++
+  if (squad.data.some((d: any) => d.name === 'quality-criteria')) passCount++
   else issues.push('[Gate 3] Squad sem quality-criteria')
 
-  if (squad.data.some((d) => d.name === 'tone-of-voice')) passCount++
+  if (squad.data.some((d: any) => d.name === 'tone-of-voice')) passCount++
   else issues.push('[Gate 3] Squad sem tone-of-voice')
 
-  if (squad.data.some((d) => d.name === 'anti-patterns')) passCount++
+  if (squad.data.some((d: any) => d.name === 'anti-patterns')) passCount++
   else issues.push('[Gate 3] Squad sem anti-patterns')
 
   const summary = `Validacao: ${passCount}/${totalChecks} checks passaram`
