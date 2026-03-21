@@ -27,6 +27,7 @@ import { AppHeader } from '@/components/layout/app-header'
 import { GlassPanel } from '@/components/shared/glass-panel'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useWebSocket } from '@/hooks/use-websocket'
+import { formatCostDetailed } from '@/lib/format'
 import { WS_EVENTS } from '@/lib/ws-events'
 import type {
   StepStartPayload,
@@ -421,7 +422,7 @@ function Terminal({
                   {/* Completion log */}
                   {isStepCompleted && (
                     <div className="text-slate-500 text-xs">
-                      <span className="text-emerald-500">❯</span> Step &quot;{step.step.label}&quot; completed ({formatTokens(step.tokensUsed)} tokens, ${step.cost.toFixed(4)})
+                      <span className="text-emerald-500">❯</span> Step &quot;{step.step.label}&quot; completed ({formatTokens(step.tokensUsed)} tokens, {formatCostDetailed(step.cost)})
                     </div>
                   )}
                 </div>
@@ -927,7 +928,7 @@ function OutputsSection({ steps }: { steps: RunStep[] }) {
               <div>
                 <p className="text-sm font-bold text-slate-900">{step.step.label}</p>
                 <p className="text-[10px] text-slate-500">
-                  {step.agent?.name ?? 'Agent'} · {formatTokens(step.tokensUsed)} tokens · ${step.cost.toFixed(4)}
+                  {step.agent?.name ?? 'Agent'} · {formatTokens(step.tokensUsed)} tokens · {formatCostDetailed(step.cost)}
                 </p>
               </div>
             </div>

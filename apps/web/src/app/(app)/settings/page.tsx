@@ -24,7 +24,6 @@ interface Settings {
   name: string
   email: string
   language: string
-  currency: string
   apiKeys: Record<string, string>
 }
 
@@ -114,7 +113,6 @@ export default function SettingsPage() {
   // Form state
   const [name, setName] = useState('')
   const [language, setLanguage] = useState('en')
-  const [currency, setCurrency] = useState('USD')
   const [anthropicKey, setAnthropicKey] = useState('')
   const [openaiKey, setOpenaiKey] = useState('')
 
@@ -136,7 +134,6 @@ export default function SettingsPage() {
         const s = json.data
         setName(s.name)
         setLanguage(s.language)
-        setCurrency(s.currency)
         if (s.apiKeys.anthropic) setAnthropicKey(s.apiKeys.anthropic)
         if (s.apiKeys.openai) setOpenaiKey(s.apiKeys.openai)
       } catch (err) {
@@ -183,7 +180,7 @@ export default function SettingsPage() {
       setError(null)
       setSuccess(false)
 
-      const body: Record<string, string> = { name, language, currency }
+      const body: Record<string, string> = { name, language }
       if (anthropicKey && !anthropicKey.includes('...')) body.anthropicApiKey = anthropicKey
       if (openaiKey && !openaiKey.includes('...')) body.openaiApiKey = openaiKey
 
@@ -266,18 +263,6 @@ export default function SettingsPage() {
                   <option value="en">English (US)</option>
                   <option value="pt-BR">Portugues (BR)</option>
                   <option value="es">Espanol</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">Currency</label>
-                <select
-                  value={currency}
-                  onChange={(e) => setCurrency(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-lg px-4 py-3 focus:ring-2 focus:ring-[#0066ff]/20 focus:border-[#0066ff] outline-none transition-all appearance-none"
-                >
-                  <option value="USD">USD ($)</option>
-                  <option value="BRL">BRL (R$)</option>
-                  <option value="EUR">EUR</option>
                 </select>
               </div>
             </div>

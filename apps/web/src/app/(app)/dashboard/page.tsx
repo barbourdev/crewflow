@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { AppHeader } from '@/components/layout/app-header'
 import { Skeleton } from '@/components/ui/skeleton'
+import { formatCost } from '@/lib/format'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -50,12 +51,6 @@ interface Squad {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function formatCost(value: number | null): string {
-  if (value == null) return '$0.00'
-  if (value >= 1000) return `$${(value / 1000).toFixed(1)}k`
-  return `$${value.toFixed(2)}`
-}
 
 function timeAgo(dateStr: string): string {
   const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000)

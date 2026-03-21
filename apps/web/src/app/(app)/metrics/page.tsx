@@ -17,6 +17,7 @@ import {
 import { AppHeader } from '@/components/layout/app-header'
 import { GlassPanel } from '@/components/shared/glass-panel'
 import { Skeleton } from '@/components/ui/skeleton'
+import { formatCost } from '@/lib/format'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -60,11 +61,6 @@ interface CostRun {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function formatCost(v: number): string {
-  if (v >= 1000) return `$${(v / 1000).toFixed(1)}k`
-  return `$${v.toFixed(2)}`
-}
 
 function formatTokens(v: number): string {
   if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`
