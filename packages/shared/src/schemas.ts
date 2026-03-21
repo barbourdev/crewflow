@@ -56,6 +56,8 @@ export const updateSettingsSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   language: z.enum(['pt-BR', 'en', 'es']).optional(),
   currency: z.enum(['BRL', 'USD', 'EUR']).optional(),
+  betaFeatures: z.boolean().optional(),
+  verboseLogging: z.boolean().optional(),
   anthropicApiKey: z.string().optional(),
   openaiApiKey: z.string().optional(),
 })

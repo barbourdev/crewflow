@@ -6,6 +6,7 @@ import { HeroSection } from './hero-section'
 import { FeaturesSection } from './features-section'
 import { OssSection } from './oss-section'
 import { CtaSection } from './cta-section'
+import { BetaNetworkSection } from './beta-network-section'
 import { LandingFooter } from './landing-footer'
 import { RevealOnScroll } from './reveal-on-scroll'
 import { BackgroundMesh } from './background-mesh'
@@ -51,6 +52,10 @@ export function LandingOrchestrator({ github }: LandingOrchestratorProps) {
 
             <RevealOnScroll from="bottom" delay={100}>
               <OssSection github={github} />
+            </RevealOnScroll>
+
+            <RevealOnScroll from="bottom" delay={100}>
+              <BetaNetworkSection />
             </RevealOnScroll>
 
             <RevealOnScroll from="scale" delay={100}>

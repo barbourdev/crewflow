@@ -26,6 +26,7 @@ interface Settings {
   email: string
   language: string
   apiKeys: Record<string, string>
+  preferences?: { betaFeatures?: boolean; verboseLogging?: boolean }
 }
 
 interface KeyValidation {
@@ -138,6 +139,8 @@ export default function SettingsPage() {
         setLanguage(s.language)
         if (s.apiKeys.anthropic) setAnthropicKey(s.apiKeys.anthropic)
         if (s.apiKeys.openai) setOpenaiKey(s.apiKeys.openai)
+        if (s.preferences?.betaFeatures !== undefined) setBetaFeatures(s.preferences.betaFeatures)
+        if (s.preferences?.verboseLogging !== undefined) setVerboseLogging(s.preferences.verboseLogging)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error')
       } finally {
@@ -182,7 +185,7 @@ export default function SettingsPage() {
       setError(null)
       setSuccess(false)
 
-      const body: Record<string, string> = { name, language }
+      const body: Record<string, unknown> = { name, language, betaFeatures, verboseLogging }
       if (anthropicKey && !anthropicKey.includes('...')) body.anthropicApiKey = anthropicKey
       if (openaiKey && !openaiKey.includes('...')) body.openaiApiKey = openaiKey
 

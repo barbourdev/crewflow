@@ -355,6 +355,23 @@ class CrewFlowWSServer {
   }
 
   // ==========================================================================
+  // Verbose Logging
+  // ==========================================================================
+
+  emitVerboseLog(
+    runId: string,
+    type: 'prompt' | 'tokens' | 'model' | 'timing' | 'retry' | 'veto' | 'context',
+    message: string,
+    runStepId?: string,
+    metadata?: Record<string, unknown>,
+  ) {
+    this.broadcastToRun(runId, {
+      event: WS_EVENTS.VERBOSE_LOG,
+      payload: { runId, runStepId, type, message, metadata },
+    })
+  }
+
+  // ==========================================================================
   // Status
   // ==========================================================================
 

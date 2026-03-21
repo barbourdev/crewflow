@@ -61,6 +61,15 @@ export async function PUT(request: NextRequest) {
     if (data.language !== undefined) updateData.language = data.language
     if (data.currency !== undefined) updateData.currency = data.currency
 
+    // Persist betaFeatures/verboseLogging in preferences JSON
+    if (data.betaFeatures !== undefined || data.verboseLogging !== undefined) {
+      let prefs: Record<string, unknown> = {}
+      try { prefs = JSON.parse(user.preferences) as Record<string, unknown> } catch { /* */ }
+      if (data.betaFeatures !== undefined) prefs.betaFeatures = data.betaFeatures
+      if (data.verboseLogging !== undefined) prefs.verboseLogging = data.verboseLogging
+      updateData.preferences = JSON.stringify(prefs)
+    }
+
     if (data.anthropicApiKey !== undefined || data.openaiApiKey !== undefined) {
       let existingKeys: Record<string, string> = {}
       if (user.apiKeys) {

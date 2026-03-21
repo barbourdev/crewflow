@@ -1,9 +1,11 @@
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/layout/app-sidebar'
 import { I18nProvider } from '@/components/providers/i18n-provider'
+import { SettingsProvider } from '@/components/providers/settings-provider'
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
+    <SettingsProvider>
     <I18nProvider>
     <SidebarProvider>
       <AppSidebar />
@@ -18,5 +20,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </SidebarInset>
     </SidebarProvider>
     </I18nProvider>
+    </SettingsProvider>
   )
 }

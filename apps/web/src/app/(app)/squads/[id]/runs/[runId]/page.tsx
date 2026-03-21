@@ -28,6 +28,7 @@ import { GlassPanel } from '@/components/shared/glass-panel'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useWebSocket } from '@/hooks/use-websocket'
 import { formatCostDetailed } from '@/lib/format'
+import { useSettings } from '@/hooks/use-settings'
 import { useTranslation } from '@/lib/i18n'
 import { WS_EVENTS } from '@/lib/ws-events'
 import type {
@@ -40,6 +41,7 @@ import type {
   RunMetricsPayload,
   HandoffPayload,
   CheckpointRequestPayload,
+  VerboseLogPayload,
 } from '@/lib/ws-events'
 
 // ---------------------------------------------------------------------------
@@ -77,6 +79,14 @@ interface CheckpointRequest {
   runStepId: string; stepLabel: string; previousOutput: string
   checkpointType: 'approval' | 'selection' | 'input'
   question?: string; options?: string[]; instructions?: string
+}
+
+interface VerboseLog {
+  runStepId?: string
+  type: 'prompt' | 'tokens' | 'model' | 'timing' | 'retry' | 'veto' | 'context'
+  message: string
+  metadata?: Record<string, unknown>
+  timestamp: number
 }
 
 // ---------------------------------------------------------------------------
@@ -200,6 +210,8 @@ function Terminal({
   reviewRejectRequest,
   onHumanInputSend,
   onReviewDecide,
+  verboseLogs,
+  showVerbose,
 }: {
   steps: RunStep[]
   liveSteps: Map<string, LiveStep>
@@ -211,6 +223,8 @@ function Terminal({
   reviewRejectRequest: { runStepId: string; agentName: string; output: string; reason: string } | null
   onHumanInputSend: (message: string) => void
   onReviewDecide: (action: 'approve' | 'redo', feedback?: string) => void
+  verboseLogs: VerboseLog[]
+  showVerbose: boolean
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const { t } = useTranslation()
@@ -270,7 +284,7 @@ function Terminal({
             <span className="text-[10px] font-bold text-red-500/70 tracking-widest uppercase">Error</span>
           )}
           <div className="h-4 w-px bg-slate-700" />
-          {/* Toggle: Terminal / Logs */}
+          {/* Toggle: Terminal / Logs / Verbose */}
           <div className="flex items-center bg-slate-800 rounded-md p-0.5 gap-0.5">
             <button
               onClick={() => setShowLogs(false)}
@@ -289,6 +303,9 @@ function Terminal({
               Logs
             </button>
           </div>
+          {showVerbose && verboseLogs.length > 0 && (
+            <span className="text-[10px] font-bold text-amber-500/70 tracking-widest uppercase">Verbose</span>
+          )}
           <button
             className="text-slate-400 hover:text-white transition-colors"
             onClick={() => {
@@ -425,6 +442,26 @@ function Terminal({
                   {isStepCompleted && (
                     <div className="text-slate-500 text-xs">
                       <span className="text-emerald-500">❯</span> {t.run.stepCompleted}: &quot;{step.step.label}&quot; ({formatTokens(step.tokensUsed)} tokens, {formatCostDetailed(step.cost)})
+                    </div>
+                  )}
+
+                  {/* Verbose logs for this step */}
+                  {showVerbose && verboseLogs.filter((v) => v.runStepId === step.id).length > 0 && (
+                    <div className="ml-4 space-y-0.5 border-l-2 border-amber-500/20 pl-3 mt-1">
+                      {verboseLogs.filter((v) => v.runStepId === step.id).map((vlog, vi) => (
+                        <div key={vi} className="flex items-start gap-2 text-[11px] font-mono">
+                          <span className={`shrink-0 font-bold uppercase ${
+                            vlog.type === 'tokens' ? 'text-cyan-500'
+                              : vlog.type === 'model' ? 'text-purple-400'
+                                : vlog.type === 'timing' ? 'text-amber-400'
+                                  : vlog.type === 'prompt' ? 'text-blue-400'
+                                    : vlog.type === 'veto' ? 'text-red-400'
+                                      : vlog.type === 'retry' ? 'text-orange-400'
+                                        : 'text-slate-500'
+                          }`}>[{vlog.type}]</span>
+                          <span className="text-slate-400">{vlog.message}</span>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -968,7 +1005,9 @@ export default function RunViewPage({ params }: { params: Promise<{ id: string; 
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [humanInputRequest, setHumanInputRequest] = useState<{ runStepId: string; agentName: string; output: string } | null>(null)
   const [reviewRejectRequest, setReviewRejectRequest] = useState<{ runStepId: string; agentName: string; output: string; reason: string } | null>(null)
+  const [verboseLogs, setVerboseLogs] = useState<VerboseLog[]>([])
 
+  const { verboseLogging } = useSettings()
   const { isConnected, subscribe, subscribeToRun, unsubscribeFromRun, sendCheckpointResponse, sendHumanInputResponse, sendReviewRejectResponse } = useWebSocket()
   const subscribedRef = useRef(false)
   const pollRef = useRef<ReturnType<typeof setTimeout>>(undefined)
@@ -1144,6 +1183,19 @@ export default function RunViewPage({ params }: { params: Promise<{ id: string; 
       }
     }))
 
+    unsubs.push(subscribe(WS_EVENTS.VERBOSE_LOG, (p) => {
+      const payload = p as VerboseLogPayload
+      if (payload.runId === runId) {
+        setVerboseLogs((prev) => [...prev, {
+          runStepId: payload.runStepId,
+          type: payload.type,
+          message: payload.message,
+          metadata: payload.metadata,
+          timestamp: Date.now(),
+        }])
+      }
+    }))
+
     return () => unsubs.forEach((fn) => fn())
   }, [subscribe, runId])
 
@@ -1298,6 +1350,8 @@ export default function RunViewPage({ params }: { params: Promise<{ id: string; 
             reviewRejectRequest={reviewRejectRequest}
             onHumanInputSend={handleHumanInputSend}
             onReviewDecide={handleReviewRejectDecision}
+            verboseLogs={verboseLogs}
+            showVerbose={verboseLogging}
           />
 
           {/* Right sidebar: Agent profile + Activity */}

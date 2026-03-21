@@ -35,6 +35,9 @@ export const WS_EVENTS = {
   REVIEW_REJECT_REQUEST: 'review_reject:request',
   REVIEW_REJECT_RESPONSE: 'review_reject:response',
 
+  // Verbose logging
+  VERBOSE_LOG: 'verbose:log',
+
   // Connection
   CONNECTED: 'connected',
   ERROR: 'error',
@@ -176,6 +179,14 @@ export interface RunCompletePayload {
   totalCost: number
   durationMs: number
   finalOutput?: string
+}
+
+export interface VerboseLogPayload {
+  runId: string
+  runStepId?: string
+  type: 'prompt' | 'tokens' | 'model' | 'timing' | 'retry' | 'veto' | 'context'
+  message: string
+  metadata?: Record<string, unknown>
 }
 
 export interface WSMessage<T = unknown> {

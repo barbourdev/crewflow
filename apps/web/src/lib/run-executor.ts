@@ -130,6 +130,18 @@ export async function executeRun(runId: string): Promise<void> {
 
   const aiProvider = createProvider(provider, apiKeys[provider]!)
 
+  // Verbose logging preference
+  let verboseLogging = false
+  try {
+    const prefs = JSON.parse(user.preferences || '{}')
+    verboseLogging = prefs.verboseLogging === true
+  } catch { /* */ }
+
+  if (verboseLogging) {
+    wsServer.emitVerboseLog(runId, 'model', `Provider: ${provider}`, undefined, { provider })
+    wsServer.emitVerboseLog(runId, 'context', `Squad: ${run.squad.name} — ${run.squad.agents.length} agents, ${run.squad.pipeline.steps.length} steps`)
+  }
+
   // ================================================================
   // MAPEAR AGENTES DO DB → AgentDefinition (com persona rica + tasks)
   // ================================================================
@@ -142,7 +154,7 @@ export async function executeRun(runId: string): Promise<void> {
     const integration = agent.integration ? JSON.parse(agent.integration as string) : undefined
 
     // Mapear tasks do agente
-    const tasks: TaskDefinition[] = agent.tasks.map((t) => ({
+    const tasks: TaskDefinition[] = agent.tasks.map((t: any) => ({
       id: t.id,
       agentId: t.agentId,
       name: t.name,
@@ -198,7 +210,7 @@ export async function executeRun(runId: string): Promise<void> {
             writesTo: integration.writesTo ?? [],
           }
         : undefined,
-      skills: agent.skills.map((s) => s.skill.name),
+      skills: agent.skills.map((s: any) => s.skill.name),
       tasks,
       position: { col: agent.positionCol, row: agent.positionRow },
     })
@@ -207,7 +219,7 @@ export async function executeRun(runId: string): Promise<void> {
   // ================================================================
   // MAPEAR STEPS DO DB → StepDefinition (com instructions, format, skills)
   // ================================================================
-  const steps: StepDefinition[] = run.squad.pipeline.steps.map((s) => ({
+  const steps: StepDefinition[] = run.squad.pipeline.steps.map((s: any) => ({
     id: s.id,
     agentId: s.agentId ?? '',
     order: s.order,
@@ -326,8 +338,8 @@ export async function executeRun(runId: string): Promise<void> {
 
   for (const agent of run.squad.agents) {
     const instructions = agent.skills
-      .filter((s) => s.skill.instructions || s.skill.implementation)
-      .map((s) => {
+      .filter((s: any) => s.skill.instructions || s.skill.implementation)
+      .map((s: any) => {
         // Preferir instructions (campo novo rico) sobre implementation (legado)
         const content = s.skill.instructions || s.skill.implementation || ''
         return `[${s.skill.name}]: ${content}`
@@ -359,7 +371,7 @@ export async function executeRun(runId: string): Promise<void> {
   // ================================================================
   // SQUAD DATA — dados de referencia (quality-criteria, tone-of-voice, etc.)
   // ================================================================
-  const squadData: string[] = run.squad.data.map((d) =>
+  const squadData: string[] = run.squad.data.map((d: any) =>
     `[${d.name}]: ${d.content}`
   )
 
@@ -413,6 +425,16 @@ export async function executeRun(runId: string): Promise<void> {
 
       wsServer.emitAgentStatus(runId, step.agentId, agent?.name ?? 'Agent', 'working')
 
+      if (verboseLogging && agent) {
+        const agentBps = bpMap.get(step.agentId)
+        const agentSkills = skillMap.get(step.agentId)
+        wsServer.emitVerboseLog(runId, 'context',
+          `Agent "${agent.name}" (${agent.role}) — ${agent.tasks.length} tasks, ${agentSkills?.length ?? 0} skills, ${agentBps?.length ?? 0} best practices`,
+          runStepId,
+          { execution: step.execution, modelTier: step.modelTier, agentId: step.agentId },
+        )
+      }
+
       prisma.runStep.update({
         where: { id: runStepId },
         data: { status: 'running', startedAt: new Date() },
@@ -431,6 +453,19 @@ export async function executeRun(runId: string): Promise<void> {
 
       wsServer.emitStepComplete(runId, runStepId, output, tokensUsed.total, cost, elapsed)
       wsServer.emitAgentStatus(runId, step.agentId, agent?.name ?? 'Agent', 'done')
+
+      if (verboseLogging) {
+        wsServer.emitVerboseLog(runId, 'tokens',
+          `Input: ${tokensUsed.input} | Output: ${tokensUsed.output} | Total: ${tokensUsed.total}`,
+          runStepId,
+          { input: tokensUsed.input, output: tokensUsed.output, total: tokensUsed.total, cost },
+        )
+        wsServer.emitVerboseLog(runId, 'timing',
+          `Step "${step.label}" completed in ${((elapsed) / 1000).toFixed(1)}s — $${cost.toFixed(4)}`,
+          runStepId,
+          { elapsedMs: elapsed, cost },
+        )
+      }
 
       await prisma.runStep.update({
         where: { id: runStepId },
@@ -570,6 +605,14 @@ export async function executeRun(runId: string): Promise<void> {
           message: `Veto falhou: ${violations.join('; ')}`,
         },
       }).catch(() => {})
+
+      if (verboseLogging) {
+        wsServer.emitVerboseLog(runId, 'veto',
+          `Veto violations: ${violations.join(' | ')}`,
+          runStepId,
+          { violations },
+        )
+      }
     },
   })
 
