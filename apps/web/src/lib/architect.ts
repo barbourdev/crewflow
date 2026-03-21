@@ -574,6 +574,9 @@ ${bpContext}${refsContext}`
     { role: 'user', content: `Pesquise sobre: ${session.discovery.purpose}\nPublico: ${session.discovery.audience}\nFormatos: ${session.discovery.targetFormats?.join(', ') ?? 'geral'}` },
   ]
 
+  console.log(`[ARCHITECT] [Research] Starting research phase with web search tools`)
+  console.log(`[ARCHITECT] [Research] Purpose: ${session.discovery.purpose}`)
+  console.log(`[ARCHITECT] [Research] System prompt length: ${messages[0]!.content.length} chars`)
   emitOutput(session.id, 'research', '> Iniciando pesquisa de dominio...\n')
 
   // Tentar com web_search tools primeiro
@@ -581,12 +584,15 @@ ${bpContext}${refsContext}`
   try {
     const { executeToolCall } = await import('@crewflow/engine')
 
+    console.log(`[ARCHITECT] [Research] Calling provider.generateText with RESEARCH_TOOLS (${RESEARCH_TOOLS.length} tools)`)
     emitOutput(session.id, 'research', '> Usando ferramentas de pesquisa web...\n\n')
 
     const result = await provider.generateText(messages, {
       tools: RESEARCH_TOOLS,
       maxTokens: 8192,
     })
+
+    console.log(`[ARCHITECT] [Research] Initial response: stopReason=${result.stopReason}, toolCalls=${result.toolCalls?.length ?? 0}, content=${result.content.length} chars, tokens=${result.tokensUsed.total}`)
 
     // Loop de tool calls
     if (result.toolCalls && result.toolCalls.length > 0 && result.stopReason === 'tool_use') {
@@ -595,19 +601,27 @@ ${bpContext}${refsContext}`
       const maxRounds = 8
 
       for (let round = 0; round < maxRounds; round++) {
-        if (!currentResult.toolCalls || currentResult.toolCalls.length === 0 || currentResult.stopReason !== 'tool_use') break
+        if (!currentResult.toolCalls || currentResult.toolCalls.length === 0 || currentResult.stopReason !== 'tool_use') {
+          console.log(`[ARCHITECT] [Research] Round ${round + 1}: no more tool calls, stopping loop`)
+          break
+        }
+
+        console.log(`[ARCHITECT] [Research] Round ${round + 1}: ${currentResult.toolCalls.length} tool calls`)
 
         // Emitir progresso visual
         for (const tc of currentResult.toolCalls) {
           if (tc.name === 'web_search') {
+            console.log(`[ARCHITECT] [Research] Tool: web_search("${tc.input.query}")`)
             emitOutput(session.id, 'research', `🔍 Pesquisando: "${tc.input.query}"...\n`)
           } else if (tc.name === 'web_fetch') {
+            console.log(`[ARCHITECT] [Research] Tool: web_fetch("${String(tc.input.url).slice(0, 80)}")`)
             emitOutput(session.id, 'research', `📄 Lendo: ${String(tc.input.url).slice(0, 80)}...\n`)
           }
         }
 
         // Emitir texto parcial do modelo (se houver)
         if (currentResult.content) {
+          console.log(`[ARCHITECT] [Research] Round ${round + 1}: partial content ${currentResult.content.length} chars`)
           emitOutput(session.id, 'research', currentResult.content)
         }
 
@@ -619,7 +633,9 @@ ${bpContext}${refsContext}`
 
         // Executar tools
         for (const tc of currentResult.toolCalls) {
+          console.log(`[ARCHITECT] [Research] Executing tool "${tc.name}"...`)
           const toolResult = await executeToolCall(tc)
+          console.log(`[ARCHITECT] [Research] Tool "${tc.name}" result: ${toolResult.slice(0, 150)}...`)
           emitOutput(session.id, 'research', `✅ ${tc.name} concluido\n`)
           loopMessages.push({
             role: 'tool_result',
@@ -630,23 +646,27 @@ ${bpContext}${refsContext}`
 
         emitOutput(session.id, 'research', `\n> Processando resultados (round ${round + 1})...\n`)
 
+        console.log(`[ARCHITECT] [Research] Calling provider for round ${round + 2}...`)
         currentResult = await provider.generateText(loopMessages, {
           tools: RESEARCH_TOOLS,
           maxTokens: 8192,
         })
+        console.log(`[ARCHITECT] [Research] Round ${round + 2} response: stopReason=${currentResult.stopReason}, toolCalls=${currentResult.toolCalls?.length ?? 0}, content=${currentResult.content.length} chars`)
       }
 
       finalContent = currentResult.content
     } else {
       // Modelo nao quis usar tools — usar resultado direto
+      console.log(`[ARCHITECT] [Research] Model did not use tools, using direct response`)
       finalContent = result.content
     }
 
+    console.log(`[ARCHITECT] [Research] Final content: ${finalContent.length} chars`)
     emitOutput(session.id, 'research', '\n\n---\n\n')
     emitOutput(session.id, 'research', finalContent)
   } catch (err) {
     // Fallback: se tools falharem, usar streaming sem tools
-    console.error('[ARCHITECT] Research with tools failed, falling back to streaming:', err)
+    console.error('[ARCHITECT] [Research] FAILED with tools, falling back to streaming:', err)
     emitOutput(session.id, 'research', '\n> Pesquisa web indisponivel, gerando com conhecimento do modelo...\n\n')
 
     const result = await provider.streamText(messages, (chunk) => {
