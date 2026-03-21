@@ -28,6 +28,7 @@ import { GlassPanel } from '@/components/shared/glass-panel'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useWebSocket } from '@/hooks/use-websocket'
 import { formatCostDetailed } from '@/lib/format'
+import { useTranslation } from '@/lib/i18n'
 import { WS_EVENTS } from '@/lib/ws-events'
 import type {
   StepStartPayload,
@@ -951,6 +952,7 @@ function OutputsSection({ steps }: { steps: RunStep[] }) {
 
 export default function RunViewPage({ params }: { params: Promise<{ id: string; runId: string }> }) {
   const { id: squadId, runId } = React.use(params)
+  const { t } = useTranslation()
   const [run, setRun] = useState<RunDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -1193,7 +1195,7 @@ export default function RunViewPage({ params }: { params: Promise<{ id: string; 
   if (loading) {
     return (
       <>
-        <AppHeader title="Run View" description="Loading" />
+        <AppHeader title={t.run.title} description={t.common.loading} />
         <div className="p-8"><Skeleton className="h-96 rounded-xl" /></div>
       </>
     )
@@ -1202,7 +1204,7 @@ export default function RunViewPage({ params }: { params: Promise<{ id: string; 
   if (error || !run) {
     return (
       <>
-        <AppHeader title="Run View" />
+        <AppHeader title={t.run.title} />
         <div className="p-8 max-w-4xl mx-auto">
           <GlassPanel accent className="p-8 text-center">
             <AlertTriangle className="size-8 text-red-500 mx-auto mb-3" />
@@ -1224,17 +1226,17 @@ export default function RunViewPage({ params }: { params: Promise<{ id: string; 
             {/* Metrics pills */}
             <div className="hidden md:flex items-center gap-2 bg-slate-100 p-1 rounded-lg border border-slate-200">
               <div className="px-3 py-1 flex flex-col items-center min-w-[70px]">
-                <span className="text-[10px] uppercase font-bold text-slate-400 leading-none">Elapsed</span>
+                <span className="text-[10px] uppercase font-bold text-slate-400 leading-none">{t.run.elapsed}</span>
                 <span className="text-sm font-mono font-bold text-slate-700 leading-tight">{elapsed}</span>
               </div>
               <div className="w-px h-6 bg-slate-200" />
               <div className="px-3 py-1 flex flex-col items-center min-w-[60px]">
-                <span className="text-[10px] uppercase font-bold text-slate-400 leading-none">Tokens</span>
+                <span className="text-[10px] uppercase font-bold text-slate-400 leading-none">{t.run.tokens}</span>
                 <span className="text-sm font-mono font-bold text-slate-700 leading-tight">{formatTokens(tokens)}</span>
               </div>
               <div className="w-px h-6 bg-slate-200" />
               <div className="px-3 py-1 flex flex-col items-center min-w-[60px]">
-                <span className="text-[10px] uppercase font-bold text-slate-400 leading-none">Cost</span>
+                <span className="text-[10px] uppercase font-bold text-slate-400 leading-none">{t.run.cost}</span>
                 <span className="text-sm font-mono font-bold text-slate-700 leading-tight">${cost.toFixed(2)}</span>
               </div>
             </div>
@@ -1253,12 +1255,12 @@ export default function RunViewPage({ params }: { params: Promise<{ id: string; 
             {/* Action buttons */}
             {currentStatus === 'running' && (
               <button onClick={handlePause} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 border border-slate-200">
-                <Pause className="size-3.5" /> Pause
+                <Pause className="size-3.5" /> {t.run.pause}
               </button>
             )}
             {currentStatus === 'paused' && (
               <button onClick={handleResume} className="bg-[#0066ff] text-white px-3 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-1">
-                <Play className="size-3.5" /> Resume
+                <Play className="size-3.5" /> {t.run.resume}
               </button>
             )}
             {isActive && (
@@ -1268,7 +1270,7 @@ export default function RunViewPage({ params }: { params: Promise<{ id: string; 
             )}
 
             <Link href={`/squads/${squadId}`} className="text-slate-400 hover:text-slate-700 text-xs font-bold">
-              Back
+              {t.common.back}
             </Link>
           </div>
         }
