@@ -225,6 +225,23 @@ export class PipelineRunner {
           }
         }
 
+        // Context loading — carregar dados especificos do step
+        const stepContextData = [...(context.squadData ?? [])]
+        if (step.contextLoading && step.contextLoading.length > 0 && context.squadData) {
+          // Filtrar squad data que corresponde ao contextLoading
+          const filtered = context.squadData.filter((d) =>
+            step.contextLoading!.some((cl) => d.toLowerCase().includes(cl.toLowerCase()))
+          )
+          if (filtered.length > 0) {
+            // Substituir pelo subset filtrado (mais focado)
+            stepContextData.length = 0
+            stepContextData.push(...filtered)
+          }
+        }
+
+        // Model tier → model override
+        const modelOverride = this.resolveModelTier(step.modelTier, context.provider)
+
         const result = await this.agentExecutor.execute(agent, context.input, {
           provider: context.provider,
           previousOutput: lastOutput,
@@ -232,7 +249,7 @@ export class PipelineRunner {
           skillInstructions: stepSkillInstructions.length > 0 ? stepSkillInstructions : undefined,
           memories: context.memories,
           stepInstructions: step.instructions,
-          contextData: context.squadData,
+          contextData: stepContextData.length > 0 ? stepContextData : undefined,
           outputExample: step.outputExample,
           onStream: (chunk) => this.callbacks.onStepOutput?.(step, chunk),
           // Tools — web_search, web_fetch, etc.
@@ -240,6 +257,8 @@ export class PipelineRunner {
           onToolCall: this.callbacks.onToolCall
             ? (toolName, input, result) => this.callbacks.onToolCall!(step.id, toolName, input, result)
             : undefined,
+          // Model tier override
+          modelOverride,
           // Inline questions — agente pode perguntar ao usuario mid-execution
           onInlineQuestion: this.callbacks.onHumanInputRequest
             ? async (question: string, agentName: string) => {
@@ -255,11 +274,22 @@ export class PipelineRunner {
 
         console.log(`[ENGINE] Step ${i + 1}: agent "${agent.name}" completed. Output length: ${result.content.length}, tokens: ${result.tokensUsed.total}`)
 
-        // Veto check
+        // Veto check — se falhar, redo o step (max 1 retry)
         if (step.vetoConditions && step.vetoConditions.length > 0) {
           const vetoResult = await this.vetoChecker.check(result.content, step.vetoConditions)
           if (!vetoResult.passed) {
             this.callbacks.onVetoFail?.(step, vetoResult.violations)
+
+            // Se tem onReject, voltar para o step alvo
+            if (step.onReject) {
+              const targetIndex = sortedSteps.findIndex((s) => s.label === step.onReject || s.id === step.onReject)
+              if (targetIndex >= 0) {
+                context.input = `${context.input}\n\n--- VETO FAILED ---\nViolacoes: ${vetoResult.violations.join('; ')}\n\nRefaca corrigindo os problemas acima.`
+                this.callbacks.onStepComplete?.(step, result.content, result.tokensUsed, result.cost)
+                i = targetIndex
+                continue
+              }
+            }
           }
         }
 
@@ -326,6 +356,37 @@ export class PipelineRunner {
     return new Promise<void>((resolve) => {
       this.pausePromise = { resolve }
     })
+  }
+
+  /**
+   * Resolve model tier para um model ID concreto.
+   * fast → modelo mais barato (haiku/gpt-4o-mini)
+   * powerful → modelo padrao (sonnet/gpt-4o)
+   * undefined → usa padrao do provider
+   */
+  private resolveModelTier(tier: string | undefined, _provider: AIProvider): string | undefined {
+    if (!tier) return undefined
+
+    const MODEL_TIERS: Record<string, Record<string, string>> = {
+      fast: {
+        anthropic: 'claude-haiku-4-5-20251001',
+        openai: 'gpt-4o-mini',
+      },
+      powerful: {
+        anthropic: 'claude-sonnet-4-20250514',
+        openai: 'gpt-4o',
+      },
+    }
+
+    const tierModels = MODEL_TIERS[tier.toLowerCase()]
+    if (!tierModels) return undefined
+
+    // Detectar provider pelo nome da classe
+    const providerName = _provider.constructor.name.toLowerCase()
+    if (providerName.includes('anthropic')) return tierModels.anthropic
+    if (providerName.includes('openai')) return tierModels.openai
+
+    return undefined
   }
 
   private findPreviousAgentStep(steps: StepDefinition[], currentIndex: number): number {

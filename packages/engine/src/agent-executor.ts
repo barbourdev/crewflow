@@ -25,6 +25,8 @@ export interface AgentExecutorOptions {
   tools?: AITool[]
   /** Callback para log de tool calls (para verbose logging) */
   onToolCall?: (toolName: string, input: Record<string, unknown>, result: string) => void
+  /** Override de modelo (ex: model tier fast → haiku, powerful → sonnet) */
+  modelOverride?: string
 }
 
 interface ExecutionResult {
@@ -185,7 +187,10 @@ export class AgentExecutor {
   ): Promise<ExecutionResult> {
     const totalTokens = { input: 0, output: 0, total: 0 }
     let totalCost = 0
-    const generateOptions = options.tools ? { tools: options.tools } : undefined
+    const generateOptions = {
+      ...(options.tools ? { tools: options.tools } : {}),
+      ...(options.modelOverride ? { model: options.modelOverride } : {}),
+    }
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       let result
@@ -433,6 +438,16 @@ IMPORTANTE: Use as tools de pesquisa quando:
 - Voce nao tiver certeza sobre um fato especifico
 - Precisar de dados reais (estatisticas, precos, eventos)`)
     }
+
+    // === STRUCTURED OUTPUT ===
+    parts.push(`## Formato do output
+Seu output DEVE ser estruturado em markdown com secoes claras:
+- Use headers (##, ###) para organizar secoes
+- Use listas para items enumeraveis
+- Use **negrito** para termos-chave
+- Inclua metricas e dados concretos quando relevante
+- NAO produza texto corrido sem estrutura
+- Se a task define outputFormat, siga-o EXATAMENTE`)
 
     // === INSTRUCAO DE INLINE QUESTIONS ===
     if (options?.onInlineQuestion) {
