@@ -213,6 +213,7 @@ function Terminal({
   onReviewDecide: (action: 'approve' | 'redo', feedback?: string) => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const { t } = useTranslation()
   const userScrolledRef = useRef(false)
   const [showLogs, setShowLogs] = useState(false)
   const [chatInput, setChatInput] = useState('')
@@ -423,7 +424,7 @@ function Terminal({
                   {/* Completion log */}
                   {isStepCompleted && (
                     <div className="text-slate-500 text-xs">
-                      <span className="text-emerald-500">❯</span> Step &quot;{step.step.label}&quot; completed ({formatTokens(step.tokensUsed)} tokens, {formatCostDetailed(step.cost)})
+                      <span className="text-emerald-500">❯</span> {t.run.stepCompleted}: &quot;{step.step.label}&quot; ({formatTokens(step.tokensUsed)} tokens, {formatCostDetailed(step.cost)})
                     </div>
                   )}
                 </div>
@@ -518,6 +519,7 @@ function Terminal({
 // ---------------------------------------------------------------------------
 
 function AgentProfileCard({ step, liveStep }: { step: RunStep; liveStep?: LiveStep }) {
+  const { t } = useTranslation()
   const agent = step.agent
   if (!agent) return null
 
@@ -539,7 +541,7 @@ function AgentProfileCard({ step, liveStep }: { step: RunStep; liveStep?: LiveSt
           <p className="text-xs text-slate-700 leading-snug">{step.step.label} ({step.step.type})</p>
         </div>
         <div className="flex items-center justify-between px-3 py-2 bg-[#0066ff]/5 rounded-lg border border-[#0066ff]/10">
-          <span className="text-xs font-semibold text-[#0066ff]">Tokens Used</span>
+          <span className="text-xs font-semibold text-[#0066ff]">{t.run.tokens}</span>
           <span className="text-xs font-bold text-[#0066ff]">{formatTokens(liveStep?.tokensUsed ?? step.tokensUsed)}</span>
         </div>
       </div>
@@ -552,6 +554,7 @@ function AgentProfileCard({ step, liveStep }: { step: RunStep; liveStep?: LiveSt
 // ---------------------------------------------------------------------------
 
 function ActivityLog({ steps, liveSteps }: { steps: RunStep[]; liveSteps: Map<string, LiveStep> }) {
+  const { t } = useTranslation()
   const activities = steps.flatMap((s) => {
     const live = liveSteps.get(s.id)
     const status = live?.status ?? s.status
@@ -580,7 +583,7 @@ function ActivityLog({ steps, liveSteps }: { steps: RunStep[]; liveSteps: Map<st
             <div>
               <p className="text-xs font-medium text-slate-800 leading-tight">{a.agent}: {a.label}</p>
               <p className="text-[10px] text-slate-400">
-                {a.status === 'running' ? 'In progress...' : a.status === 'completed' ? 'Done' : a.status === 'failed' ? 'Failed' : 'Pending'}
+                {a.status === 'running' ? t.run.status.running : a.status === 'completed' ? t.run.status.completed : a.status === 'failed' ? t.run.status.failed : t.run.status.pending}
               </p>
             </div>
           </div>
@@ -909,6 +912,7 @@ function ReviewRejectModal({
 // ---------------------------------------------------------------------------
 
 function OutputsSection({ steps }: { steps: RunStep[] }) {
+  const { t } = useTranslation()
   const completedSteps = steps.filter((s) => s.output && s.output.length > 0)
 
   if (completedSteps.length === 0) return null
@@ -916,8 +920,8 @@ function OutputsSection({ steps }: { steps: RunStep[] }) {
   return (
     <div className="border-t border-slate-200 bg-white">
       <div className="px-6 py-4 border-b border-slate-100">
-        <h3 className="text-sm font-bold text-slate-900">Pipeline Outputs</h3>
-        <p className="text-xs text-slate-500">Final output from each completed step</p>
+        <h3 className="text-sm font-bold text-slate-900">{t.run.outputs}</h3>
+        <p className="text-xs text-slate-500">{t.run.outputsDesc}</p>
       </div>
       <div className="divide-y divide-slate-100">
         {completedSteps.map((step) => (
