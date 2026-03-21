@@ -44,7 +44,7 @@ export async function PUT(
 
     if (!pipeline) return notFound('Pipeline')
 
-    const updated = await prisma.$transaction(async (tx) => {
+    const updated = await prisma.$transaction(async (tx: any) => {
       await tx.step.deleteMany({ where: { pipelineId: pipeline.id } })
 
       if (config) {

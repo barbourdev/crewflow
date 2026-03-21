@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
       prisma.squad.count({ where }),
     ])
 
-    const result = squads.map((squad) => ({
+    const result = squads.map((squad: any) => ({
       ...squad,
       agentCount: squad._count.agents,
       lastRun: squad.runs[0] ?? null,

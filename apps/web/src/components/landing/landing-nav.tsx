@@ -13,6 +13,7 @@ const navItems: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard' },
   { label: 'Open Source', href: '#oss' },
   { label: 'Docs', href: '/docs' },
+  { label: 'Settings', href: '/settings' },
 ]
 
 const BRAND = 'CREWFLOW'

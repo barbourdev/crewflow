@@ -94,12 +94,12 @@ export async function GET(request: NextRequest) {
     ])
 
     // Enrich cost by squad
-    const squadIds = costBySquad.map((s) => s.squadId)
+    const squadIds = costBySquad.map((s: any) => s.squadId)
     const squads = await prisma.squad.findMany({
       where: { id: { in: squadIds } },
       select: { id: true, name: true, icon: true },
     })
-    const squadMap = new Map(squads.map((s) => [s.id, s]))
+    const squadMap = new Map(squads.map((s: any) => [s.id, s]))
 
     const costTodayVal = costToday._sum.totalCost ?? 0
     const costYesterdayVal = costYesterday._sum.totalCost ?? 0
@@ -116,7 +116,7 @@ export async function GET(request: NextRequest) {
       totalCost: totalCost._sum.totalCost ?? 0,
       tokensToday: costToday._sum.totalTokens ?? 0,
       costBySquad: costBySquad
-        .map((s) => ({
+        .map((s: any) => ({
           squadId: s.squadId,
           name: squadMap.get(s.squadId)?.name ?? 'Unknown',
           icon: squadMap.get(s.squadId)?.icon ?? null,
@@ -124,8 +124,8 @@ export async function GET(request: NextRequest) {
           totalTokens: s._sum.totalTokens ?? 0,
           runCount: s._count,
         }))
-        .sort((a, b) => b.totalCost - a.totalCost),
-      runs: runs.map((r) => ({
+        .sort((a: any, b: any) => b.totalCost - a.totalCost),
+      runs: runs.map((r: any) => ({
         id: r.id,
         status: r.status,
         totalTokens: r.totalTokens,

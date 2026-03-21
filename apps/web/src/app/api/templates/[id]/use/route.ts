@@ -66,7 +66,7 @@ export async function POST(
       }>
     }
 
-    const squad = await prisma.$transaction(async (tx) => {
+    const squad = await prisma.$transaction(async (tx: any) => {
       const newSquad = await tx.squad.create({
         data: {
           name: squadName,
@@ -114,7 +114,7 @@ export async function POST(
         const skills = await tx.skill.findMany({
           where: { name: { in: [...allSkillNames] } },
         })
-        const skillByName = new Map(skills.map((s) => [s.name, s.id]))
+        const skillByName = new Map(skills.map((s: any) => [s.name, s.id]))
 
         for (const [agentId, skillNames] of agentSkillNames) {
           for (const skillName of skillNames) {

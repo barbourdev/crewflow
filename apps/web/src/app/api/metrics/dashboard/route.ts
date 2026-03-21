@@ -54,8 +54,8 @@ export async function GET() {
     ])
 
     // Calcular System Health
-    const totalRuns = healthStats.reduce((sum, s) => sum + s._count, 0)
-    const completedRuns = healthStats.find((s) => s.status === 'completed')?._count ?? 0
+    const totalRuns = healthStats.reduce((sum: number, s: any) => sum + s._count, 0)
+    const completedRuns = healthStats.find((s: any) => s.status === 'completed')?._count ?? 0
     const systemHealth = totalRuns > 0 ? Math.round((completedRuns / totalRuns) * 1000) / 10 : 100
 
     return success({

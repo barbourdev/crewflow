@@ -61,7 +61,7 @@ export async function POST(
     if (!squad) return notFound('Squad')
     if (!squad.pipeline) return notFound('Pipeline')
 
-    const run = await prisma.$transaction(async (tx) => {
+    const run = await prisma.$transaction(async (tx: any) => {
       const newRun = await tx.run.create({
         data: {
           squadId: id,

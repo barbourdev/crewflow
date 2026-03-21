@@ -32,7 +32,7 @@ export async function POST(
     const partialCost = costAgg._sum.cost ?? 0
     const partialTokens = costAgg._sum.tokensUsed ?? 0
 
-    const updated = await prisma.$transaction(async (tx) => {
+    const updated = await prisma.$transaction(async (tx: any) => {
       await tx.runStep.updateMany({
         where: { runId: id, status: { in: ['pending', 'running'] } },
         data: { status: 'skipped' },
