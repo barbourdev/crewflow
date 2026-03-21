@@ -12,6 +12,7 @@ import {
   Settings,
   ChevronsUpDown,
 } from 'lucide-react'
+import { useTranslation } from '@/lib/i18n'
 import {
   Sidebar,
   SidebarContent,
@@ -21,16 +22,17 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
 
-const navItems = [
-  { title: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { title: 'Squads', href: '/squads', icon: Users },
-  { title: 'Templates', href: '/templates', icon: FileText },
-  { title: 'Metrics', href: '/metrics', icon: BarChart3 },
-  { title: 'Docs', href: '/docs', icon: BookOpen },
-]
-
 export function AppSidebar() {
   const pathname = usePathname()
+  const { t } = useTranslation()
+
+  const navItems = [
+    { title: t.nav.dashboard, href: '/dashboard', icon: LayoutDashboard },
+    { title: t.nav.squads, href: '/squads', icon: Users },
+    { title: t.nav.templates, href: '/templates', icon: FileText },
+    { title: t.nav.metrics, href: '/metrics', icon: BarChart3 },
+    { title: t.nav.docs, href: '/docs', icon: BookOpen },
+  ]
   const [userName, setUserName] = useState('User')
 
   useEffect(() => {
@@ -66,7 +68,7 @@ export function AppSidebar() {
           <div>
             <h1 className="text-slate-900 font-bold text-lg leading-none">CrewFlow</h1>
             <p className="text-[10px] text-slate-500 font-medium uppercase tracking-widest mt-1">
-              Management Console
+              {t.nav.managementConsole}
             </p>
           </div>
         </Link>
@@ -112,7 +114,7 @@ export function AppSidebar() {
               }`}
             >
               <Settings className="size-[22px]" />
-              <span>Settings</span>
+              <span>{t.nav.settings}</span>
             </Link>
           </SidebarMenuItem>
         </SidebarMenu>

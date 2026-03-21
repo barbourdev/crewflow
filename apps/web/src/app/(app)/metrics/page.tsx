@@ -18,6 +18,7 @@ import { AppHeader } from '@/components/layout/app-header'
 import { GlassPanel } from '@/components/shared/glass-panel'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatCost } from '@/lib/format'
+import { useTranslation } from '@/lib/i18n'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -87,9 +88,9 @@ function formatDuration(start: string | null, end: string | null): string {
 }
 
 const DATE_FILTERS = [
-  { label: 'Last 7 Days', days: 7 },
-  { label: 'Last 30 Days', days: 30 },
-  { label: 'Last 90 Days', days: 90 },
+  { labelKey: 'last7days' as const, days: 7 },
+  { labelKey: 'last30days' as const, days: 30 },
+  { labelKey: 'last90days' as const, days: 90 },
 ]
 
 const RUNS_PER_PAGE = 10
@@ -219,6 +220,7 @@ function SortHeader({ label, field, currentField, currentDir, onSort, align }: {
 // ---------------------------------------------------------------------------
 
 export default function MetricsPage() {
+  const { t } = useTranslation()
   const [data, setData] = useState<CostData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -285,8 +287,8 @@ export default function MetricsPage() {
   return (
     <>
       <AppHeader
-        title="Cost Analysis"
-        description="Monitor API consumption and local inference tokens"
+        title={t.metrics.title}
+        description={t.metrics.subtitle}
       />
 
       {/* Date filter */}
@@ -303,7 +305,7 @@ export default function MetricsPage() {
               }`}
             >
               {i === 0 && <Calendar className="size-3.5" />}
-              {filter.label}
+              {t.metrics[filter.labelKey]}
             </button>
           ))}
         </div>
@@ -318,9 +320,9 @@ export default function MetricsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <StatCard
             icon={Wallet}
-            label="Total Cost Today"
+            label={t.metrics.costToday}
             value={formatCost(data?.costToday ?? 0)}
-            subtitle={`v.s. yesterday: ${formatCost(data?.costYesterday ?? 0)}`}
+            subtitle={`${t.metrics.vsYesterday}: ${formatCost(data?.costYesterday ?? 0)}`}
             change={data && data.costChangePercent !== 0 ? {
               value: `${data.costChangePercent > 0 ? '+' : ''}${data.costChangePercent}%`,
               type: data.costChangePercent > 0 ? 'up' : 'down',
@@ -329,16 +331,16 @@ export default function MetricsPage() {
           />
           <StatCard
             icon={TrendingUp}
-            label="Est. Monthly Cost"
+            label={t.metrics.estMonthlyCost}
             value={formatCost(data?.monthlyCostEstimate ?? 0)}
-            subtitle="Projected from today"
+            subtitle={t.metrics.projectedFromToday}
             loading={loading}
           />
           <StatCard
             icon={Hash}
-            label="Total Tokens"
+            label={t.metrics.totalTokens}
             value={formatTokens(data?.totalTokens ?? 0)}
-            subtitle={`${formatTokens(data?.tokensToday ?? 0)} today`}
+            subtitle={`${t.metrics.tokensToday}: ${formatTokens(data?.tokensToday ?? 0)}`}
             loading={loading}
           />
           <StatCard
@@ -353,7 +355,7 @@ export default function MetricsPage() {
         {/* Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
           <GlassPanel accent className="p-6">
-            <h3 className="font-bold text-lg mb-6">Token Usage by Squad</h3>
+            <h3 className="font-bold text-lg mb-6">{t.metrics.tokenDistribution}</h3>
             {loading ? (
               <div className="space-y-6">
                 {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
@@ -379,7 +381,7 @@ export default function MetricsPage() {
           </GlassPanel>
 
           <GlassPanel accent className="p-6">
-            <h3 className="font-bold text-lg mb-6">Cost by Squad</h3>
+            <h3 className="font-bold text-lg mb-6">{t.metrics.costBySquad}</h3>
             {loading ? <Skeleton className="h-48 w-full" /> : <CostBarChart squads={data?.costBySquad ?? []} />}
           </GlassPanel>
         </div>
@@ -387,7 +389,7 @@ export default function MetricsPage() {
         {/* Recent Agent Runs */}
         <GlassPanel accent className="overflow-hidden">
           <div className="p-6 border-b border-slate-200 flex items-center justify-between">
-            <h3 className="font-bold text-lg">Recent Agent Runs</h3>
+            <h3 className="font-bold text-lg">{t.metrics.recentRuns}</h3>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-slate-400" />
               <input
@@ -413,11 +415,11 @@ export default function MetricsPage() {
                 <table className="w-full text-left">
                   <thead className="bg-slate-50/50 text-[10px] uppercase font-bold text-slate-500 tracking-wider">
                     <tr>
-                      <th className="px-6 py-4">Execution ID</th>
-                      <th className="px-6 py-4">Squad</th>
-                      <SortHeader label="Duration" field="duration" currentField={sortField} currentDir={sortDir} onSort={toggleSort} />
-                      <SortHeader label="Tokens Used" field="tokens" currentField={sortField} currentDir={sortDir} onSort={toggleSort} align="right" />
-                      <SortHeader label="Cost" field="cost" currentField={sortField} currentDir={sortDir} onSort={toggleSort} align="right" />
+                      <th className="px-6 py-4">ID</th>
+                      <th className="px-6 py-4">{t.metrics.squad}</th>
+                      <SortHeader label={t.metrics.duration} field="duration" currentField={sortField} currentDir={sortDir} onSort={toggleSort} />
+                      <SortHeader label={t.metrics.tokens} field="tokens" currentField={sortField} currentDir={sortDir} onSort={toggleSort} align="right" />
+                      <SortHeader label={t.metrics.cost} field="cost" currentField={sortField} currentDir={sortDir} onSort={toggleSort} align="right" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">

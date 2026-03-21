@@ -15,6 +15,7 @@ import {
 import { AppHeader } from '@/components/layout/app-header'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatCost } from '@/lib/format'
+import { useTranslation } from '@/lib/i18n'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -108,6 +109,7 @@ function MetricCard({ label, value, change, progress, loading }: {
 // ---------------------------------------------------------------------------
 
 function SquadCard({ squad }: { squad: Squad }) {
+  const { t } = useTranslation()
   const isActive = squad.lastRun?.status === 'running'
 
   return (
@@ -122,12 +124,12 @@ function SquadCard({ squad }: { squad: Squad }) {
           <div className="absolute top-3 right-3">
             <span className={`px-2 py-1 text-[10px] font-bold rounded flex items-center gap-1 backdrop-blur-sm ${isActive ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-500/10 text-slate-500'}`}>
               <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
-              {isActive ? 'ACTIVE' : 'IDLE'}
+              {isActive ? t.dashboard.active : t.dashboard.idle}
             </span>
           </div>
           {/* Hover overlay */}
           <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-white/20 backdrop-blur-md">
-            <span className="bg-white text-slate-900 px-4 py-1.5 rounded-lg text-xs font-bold shadow-lg">Manage Squad</span>
+            <span className="bg-white text-slate-900 px-4 py-1.5 rounded-lg text-xs font-bold shadow-lg">{t.dashboard.manageSquad}</span>
           </div>
         </div>
         {/* Info - altura fixa */}
@@ -135,7 +137,7 @@ function SquadCard({ squad }: { squad: Squad }) {
           <div>
             <h4 className="font-bold text-slate-900">{squad.name}</h4>
             <p className="text-[10px] font-mono text-slate-500 mt-0.5 uppercase">
-              {squad.lastRun ? `Last run: ${timeAgo(squad.lastRun.createdAt)}` : 'No runs yet'}
+              {squad.lastRun ? `${t.dashboard.lastRun}: ${timeAgo(squad.lastRun.createdAt)}` : t.dashboard.noRuns}
             </p>
           </div>
           <div className="flex -space-x-2">
@@ -168,6 +170,7 @@ const RUN_STATUS: Record<string, { icon: typeof CheckCircle2; bg: string; text: 
 }
 
 function RunItem({ run }: { run: RecentRun }) {
+  const { t } = useTranslation()
   const cfg = (RUN_STATUS[run.status] ?? RUN_STATUS.queued)!
   const Icon = cfg.icon
   const isRunning = run.status === 'running'
@@ -196,7 +199,7 @@ function RunItem({ run }: { run: RecentRun }) {
       </div>
       <div className="flex items-center gap-2 shrink-0 ml-3">
         {isRunning ? (
-          <span className="text-[10px] font-mono text-[#0066ff] font-bold animate-pulse">EXECUTING</span>
+          <span className="text-[10px] font-mono text-[#0066ff] font-bold animate-pulse">{t.dashboard.executing}</span>
         ) : isFailed ? (
           <span className="text-[10px] font-mono text-rose-500 font-bold bg-rose-500/10 px-2 py-0.5 rounded">ERR_504</span>
         ) : (
@@ -213,6 +216,7 @@ function RunItem({ run }: { run: RecentRun }) {
 // ---------------------------------------------------------------------------
 
 export default function DashboardPage() {
+  const { t } = useTranslation()
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null)
   const [squads, setSquads] = useState<Squad[]>([])
   const [squadsTotal, setSquadsTotal] = useState(0)
@@ -251,8 +255,8 @@ export default function DashboardPage() {
   return (
     <>
       <AppHeader
-        title="Project Overview"
-        description="Dashboard"
+        title={t.dashboard.title}
+        description={t.dashboard.subtitle}
         actions={
           <div className="flex items-center gap-3">
             <Link
@@ -260,7 +264,7 @@ export default function DashboardPage() {
               className="bg-[#0066ff] text-white text-sm px-4 py-1.5 rounded-lg font-bold hover:bg-[#0066ff]/90 flex items-center gap-2 shadow-lg shadow-[#0066ff]/20"
             >
               <Plus className="size-3.5" />
-              New Squad
+              {t.dashboard.newSquad}
             </Link>
           </div>
         }
@@ -273,10 +277,10 @@ export default function DashboardPage() {
 
         {/* Metric HUD */}
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-6">
-          <MetricCard label="Total Squads" value={String(metrics?.totalSquads ?? 0)} progress={70} loading={loading} />
-          <MetricCard label="Runs Today" value={String(metrics?.runsToday ?? 0)} progress={45} loading={loading} />
-          <MetricCard label="Estimated Cost" value={formatCost(metrics?.costToday ?? null)} progress={85} loading={loading} />
-          <MetricCard label="Active Instances" value={String(metrics?.activeRuns ?? 0)} change={{ value: 'STABLE', type: 'stable' }} progress={60} loading={loading} />
+          <MetricCard label={t.dashboard.totalSquads} value={String(metrics?.totalSquads ?? 0)} progress={70} loading={loading} />
+          <MetricCard label={t.dashboard.runsToday} value={String(metrics?.runsToday ?? 0)} progress={45} loading={loading} />
+          <MetricCard label={t.dashboard.estimatedCost} value={formatCost(metrics?.costToday ?? null)} progress={85} loading={loading} />
+          <MetricCard label={t.dashboard.activeInstances} value={String(metrics?.activeRuns ?? 0)} change={{ value: t.dashboard.stable, type: 'stable' }} progress={60} loading={loading} />
         </section>
 
         {/* Main grid: Squads (2col) + Runs (1col) */}
@@ -285,10 +289,10 @@ export default function DashboardPage() {
           {/* === Left: Your Squads === */}
           <div className="lg:col-span-2 space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold">Your Squads</h3>
+              <h3 className="text-lg font-bold">{t.dashboard.yourSquads}</h3>
               {squadsTotal > 0 && (
                 <Link href="/squads" className="text-[#0066ff] text-xs font-bold hover:underline uppercase tracking-widest">
-                  View all
+                  {t.common.viewAll}
                 </Link>
               )}
             </div>
@@ -309,8 +313,8 @@ export default function DashboardPage() {
                     <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 group-hover:bg-[#0066ff]/10 group-hover:text-[#0066ff] transition-colors mb-3">
                       <Plus className="size-7" />
                     </div>
-                    <h3 className="font-bold text-slate-500 group-hover:text-[#0066ff]">Create New Squad</h3>
-                    <p className="text-slate-400 text-xs mt-1">Start from squad or a template</p>
+                    <h3 className="font-bold text-slate-500 group-hover:text-[#0066ff]">{t.dashboard.createNewSquad}</h3>
+                    <p className="text-slate-400 text-xs mt-1">{t.dashboard.startFromSquad}</p>
                   </div>
                 </Link>
               </div>
@@ -320,7 +324,7 @@ export default function DashboardPage() {
           {/* === Right: Recent Runs + Efficiency === */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold">Recent Runs</h3>
+              <h3 className="text-lg font-bold">{t.dashboard.recentRuns}</h3>
               <button
                 onClick={() => fetchData(true)}
                 disabled={refreshing}
@@ -339,7 +343,7 @@ export default function DashboardPage() {
             ) : !hasRuns ? (
               <div className="bg-white/45 backdrop-blur-[16px] border border-white/60 rounded-2xl p-8 text-center">
                 <Clock className="size-5 text-slate-300 mx-auto mb-2" />
-                <p className="text-xs text-slate-400">No runs yet</p>
+                <p className="text-xs text-slate-400">{t.dashboard.noRunsYet}</p>
               </div>
             ) : (
               <div className="bg-white/45 backdrop-blur-[16px] border border-white/60 rounded-2xl divide-y divide-slate-200/40 overflow-hidden">
@@ -352,10 +356,10 @@ export default function DashboardPage() {
             {/* Efficiency Index */}
             <div className="bg-[#0066ff]/5 backdrop-blur-[16px] border border-[#0066ff]/20 p-5 rounded-2xl">
               <h4 className="text-[10px] font-bold text-[#0066ff] uppercase tracking-[0.2em] mb-3">
-                Efficiency Index
+                {t.dashboard.efficiencyIndex}
               </h4>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-slate-600 font-medium">System Health</span>
+                <span className="text-xs text-slate-600 font-medium">{t.dashboard.systemHealth}</span>
                 <span className="text-xs font-mono font-bold text-emerald-500">
                   {loading ? '--' : `${metrics?.systemHealth ?? 0}%`}
                 </span>
