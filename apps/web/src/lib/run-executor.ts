@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db'
 import { wsServer } from '@/lib/ws-server'
-import { PipelineRunner, type PipelineContext } from '@crewflow/engine'
+import { PipelineRunner, type PipelineContext, RESEARCH_TOOLS } from '@crewflow/engine'
 import { createProvider } from '@crewflow/ai'
 import type { AgentDefinition, StepDefinition, TaskDefinition } from '@crewflow/shared'
 
@@ -614,6 +614,19 @@ export async function executeRun(runId: string): Promise<void> {
         )
       }
     },
+
+    onToolCall: (stepId, toolName, input, result) => {
+      const runStepId = runStepMap.get(stepId) ?? stepId
+      console.log(`[ENGINE] Tool "${toolName}" called with:`, JSON.stringify(input).slice(0, 100))
+
+      if (verboseLogging) {
+        wsServer.emitVerboseLog(runId, 'context',
+          `Tool: ${toolName}(${JSON.stringify(input).slice(0, 100)}) → ${result.slice(0, 150)}`,
+          runStepId,
+          { toolName, input, resultPreview: result.slice(0, 200) },
+        )
+      }
+    },
   })
 
   activeRunners.set(runId, runner)
@@ -628,6 +641,7 @@ export async function executeRun(runId: string): Promise<void> {
     squadData: squadData.length > 0 ? squadData : undefined,
     formatPractices,
     skillInstructionsByName,
+    tools: RESEARCH_TOOLS,
   }
 
   try {

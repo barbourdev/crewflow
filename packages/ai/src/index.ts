@@ -1,4 +1,4 @@
-export type { AIProvider, AIMessage, AIResponse, GenerateOptions, StreamCallback } from './types'
+export type { AIProvider, AIMessage, AIResponse, GenerateOptions, StreamCallback, AITool, AIToolCall } from './types'
 export { AnthropicProvider } from './providers/anthropic'
 export { OpenAIProvider } from './providers/openai'
 export { createProvider } from './factory'

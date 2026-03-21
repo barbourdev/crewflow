@@ -5,3 +5,4 @@ export { CheckpointHandler, type CheckpointResponse, type CheckpointAction, type
 export { VetoChecker, type VetoResult } from './veto-checker'
 export { HandoffManager, type HandoffContext } from './handoff-manager'
 export { JobQueue } from './queue'
+export { RESEARCH_TOOLS, WEB_SEARCH_TOOL, WEB_FETCH_TOOL, executeToolCall } from './tools'

@@ -1,5 +1,5 @@
 import type { RunStatus, StepDefinition, AgentDefinition } from '@crewflow/shared'
-import type { AIProvider } from '@crewflow/ai'
+import type { AIProvider, AITool } from '@crewflow/ai'
 import { AgentExecutor } from './agent-executor'
 import { HandoffManager } from './handoff-manager'
 import { VetoChecker } from './veto-checker'
@@ -32,6 +32,8 @@ export interface PipelineCallbacks {
   onTaskStart?: (stepId: string, taskId: string, taskName: string, taskOrder: number, totalTasks: number) => void
   /** Chamado quando uma task individual completa */
   onTaskComplete?: (stepId: string, taskId: string, output: string, tokensUsed: number, cost: number) => void
+  /** Chamado quando o agente usa uma tool (web_search, web_fetch, etc.) */
+  onToolCall?: (stepId: string, toolName: string, input: Record<string, unknown>, result: string) => void
 }
 
 export interface PipelineContext {
@@ -47,6 +49,8 @@ export interface PipelineContext {
   formatPractices?: Map<string, string>
   /** Skill instructions por nome (para injection per-step) */
   skillInstructionsByName?: Map<string, string>
+  /** Tools disponiveis para os agentes (ex: web_search, web_fetch) */
+  tools?: AITool[]
 }
 
 export class PipelineRunner {
@@ -231,6 +235,11 @@ export class PipelineRunner {
           contextData: context.squadData,
           outputExample: step.outputExample,
           onStream: (chunk) => this.callbacks.onStepOutput?.(step, chunk),
+          // Tools — web_search, web_fetch, etc.
+          tools: context.tools,
+          onToolCall: this.callbacks.onToolCall
+            ? (toolName, input, result) => this.callbacks.onToolCall!(step.id, toolName, input, result)
+            : undefined,
           // Inline questions — agente pode perguntar ao usuario mid-execution
           onInlineQuestion: this.callbacks.onHumanInputRequest
             ? async (question: string, agentName: string) => {

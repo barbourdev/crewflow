@@ -1,5 +1,6 @@
 import type { AgentDefinition, TaskDefinition } from '@crewflow/shared'
-import type { AIProvider, AIMessage } from '@crewflow/ai'
+import type { AIProvider, AIMessage, AITool } from '@crewflow/ai'
+import { executeToolCall } from './tools'
 
 export interface AgentExecutorOptions {
   onStream?: (chunk: string) => void
@@ -20,6 +21,10 @@ export interface AgentExecutorOptions {
    * O engine detecta, envia a pergunta ao usuario, e continua com a resposta.
    */
   onInlineQuestion?: (question: string, agentName: string) => Promise<string>
+  /** Tools disponiveis para o agente (ex: web_search) */
+  tools?: AITool[]
+  /** Callback para log de tool calls (para verbose logging) */
+  onToolCall?: (toolName: string, input: Record<string, unknown>, result: string) => void
 }
 
 interface ExecutionResult {
@@ -27,6 +32,8 @@ interface ExecutionResult {
   tokensUsed: { input: number; output: number; total: number }
   cost: number
 }
+
+const MAX_TOOL_ROUNDS = 10
 
 export class AgentExecutor {
   /**
@@ -78,16 +85,7 @@ export class AgentExecutor {
       // So fazer streaming na ultima task (a que o usuario ve)
       const onStream = isLastTask ? options.onStream : undefined
 
-      let result: ExecutionResult
-      if (onStream) {
-        // Emitir separador visual antes da ultima task
-        if (sortedTasks.length > 1) {
-          onStream(`\n\n---\n\n`)
-        }
-        result = await options.provider.streamText(messages, onStream)
-      } else {
-        result = await options.provider.generateText(messages)
-      }
+      const result = await this.executeWithToolLoop(messages, options, onStream, sortedTasks.length > 1 && isLastTask)
 
       totalTokens.input += result.tokensUsed.input
       totalTokens.output += result.tokensUsed.output
@@ -104,8 +102,7 @@ export class AgentExecutor {
 
   /**
    * Execucao simples — 1 agente, 1 prompt (sem tasks).
-   * Suporta loop de inline questions: se o agente usar [AWAITING_INPUT],
-   * a pergunta eh enviada ao usuario e a resposta alimenta a proxima chamada.
+   * Suporta loop de inline questions e tool use.
    */
   private async executeSingle(
     agent: AgentDefinition,
@@ -133,15 +130,8 @@ export class AgentExecutor {
     const MAX_QUESTION_ROUNDS = 5
 
     for (let round = 0; round <= MAX_QUESTION_ROUNDS; round++) {
-      let result: ExecutionResult
-      if (options.onStream && round === 0) {
-        result = await options.provider.streamText(messages, options.onStream)
-      } else if (options.onStream) {
-        // Em rounds de continuacao, tambem fazer streaming
-        result = await options.provider.streamText(messages, options.onStream)
-      } else {
-        result = await options.provider.generateText(messages)
-      }
+      const onStream = options.onStream
+      const result = await this.executeWithToolLoop(messages, options, onStream, false)
 
       totalTokens.input += result.tokensUsed.input
       totalTokens.output += result.tokensUsed.output
@@ -181,6 +171,89 @@ export class AgentExecutor {
 
     // Se chegou aqui, excedeu o limite de rounds
     return { content: fullOutput, tokensUsed: totalTokens, cost: totalCost }
+  }
+
+  /**
+   * Executa uma chamada ao provider com loop de tool_use.
+   * Se o modelo pedir para usar uma tool, executa e continua ate ter resposta final.
+   */
+  private async executeWithToolLoop(
+    messages: AIMessage[],
+    options: AgentExecutorOptions,
+    onStream: ((chunk: string) => void) | undefined,
+    emitSeparator: boolean,
+  ): Promise<ExecutionResult> {
+    const totalTokens = { input: 0, output: 0, total: 0 }
+    let totalCost = 0
+    const generateOptions = options.tools ? { tools: options.tools } : undefined
+
+    for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+      let result
+
+      if (onStream && round === 0) {
+        if (emitSeparator) onStream(`\n\n---\n\n`)
+        result = await options.provider.streamText(messages, onStream, generateOptions)
+      } else if (onStream) {
+        result = await options.provider.streamText(messages, onStream, generateOptions)
+      } else {
+        result = await options.provider.generateText(messages, generateOptions)
+      }
+
+      totalTokens.input += result.tokensUsed.input
+      totalTokens.output += result.tokensUsed.output
+      totalTokens.total += result.tokensUsed.total
+      totalCost += result.cost
+
+      // Se nao tem tool calls, retornar resultado final
+      if (!result.toolCalls || result.toolCalls.length === 0 || result.stopReason !== 'tool_use') {
+        return { content: result.content, tokensUsed: totalTokens, cost: totalCost }
+      }
+
+      // Tool use — executar tools e continuar conversa
+      console.log(`[ENGINE] Tool calls: ${result.toolCalls.map((tc) => tc.name).join(', ')}`)
+
+      // Emitir no stream que estamos pesquisando
+      if (onStream) {
+        for (const tc of result.toolCalls) {
+          if (tc.name === 'web_search') {
+            onStream(`\n\n🔍 Searching: "${tc.input.query}"...\n`)
+          } else if (tc.name === 'web_fetch') {
+            onStream(`\n\n📄 Reading: ${tc.input.url}...\n`)
+          }
+        }
+      }
+
+      // Adicionar assistant message com tool calls ao historico
+      messages.push({
+        role: 'assistant',
+        content: result.content,
+        toolCalls: result.toolCalls,
+      })
+
+      // Executar cada tool e adicionar resultados
+      for (const toolCall of result.toolCalls) {
+        const toolResult = await executeToolCall(toolCall)
+
+        // Callback de verbose logging
+        if (options.onToolCall) {
+          options.onToolCall(toolCall.name, toolCall.input, toolResult.slice(0, 200))
+        }
+
+        console.log(`[ENGINE] Tool "${toolCall.name}" result: ${toolResult.slice(0, 100)}...`)
+
+        messages.push({
+          role: 'tool_result',
+          content: toolResult,
+          toolCallId: toolCall.id,
+        })
+      }
+
+      // Continuar loop — modelo vai processar resultados das tools
+    }
+
+    // Excedeu rounds de tool use — retornar o que tem
+    console.warn('[ENGINE] Max tool rounds exceeded, returning partial result')
+    return { content: 'Max tool iterations reached.', tokensUsed: totalTokens, cost: totalCost }
   }
 
   /**
@@ -344,6 +417,21 @@ export class AgentExecutor {
     // === TASK SKILLS (skills especificas da task atual) ===
     if (task && task.skills.length > 0) {
       parts.push(`## Skills disponiveis para esta task: ${task.skills.join(', ')}`)
+    }
+
+    // === TOOLS DISPONIVEIS ===
+    if (options?.tools && options.tools.length > 0) {
+      parts.push(`## Tools disponiveis
+Voce tem acesso a tools que pode usar durante sua execucao.
+Use-as quando precisar de informacoes atualizadas ou dados externos.
+
+Tools: ${options.tools.map((t) => `\`${t.name}\` — ${t.description}`).join('\n')}
+
+IMPORTANTE: Use as tools de pesquisa quando:
+- Precisar de informacoes atualizadas (noticias, tendencias, dados recentes)
+- O input mencionar topicos que requerem pesquisa
+- Voce nao tiver certeza sobre um fato especifico
+- Precisar de dados reais (estatisticas, precos, eventos)`)
     }
 
     // === INSTRUCAO DE INLINE QUESTIONS ===

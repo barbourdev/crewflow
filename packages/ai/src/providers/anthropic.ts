@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import type { AIProvider, AIMessage, AIResponse, GenerateOptions, StreamCallback } from '../types'
+import type { AIProvider, AIMessage, AIResponse, GenerateOptions, StreamCallback, AIToolCall } from '../types'
 import { calculateCost } from '../pricing'
 import { withRetry } from '../retry'
 
@@ -16,32 +16,53 @@ export class AnthropicProvider implements AIProvider {
     const model = options?.model ?? this.defaultModel
     const { system, chatMessages } = this.splitMessages(messages)
 
-    const response = await withRetry(() =>
-      this.client.messages.create({
-        model,
-        max_tokens: options?.maxTokens ?? 4096,
-        temperature: options?.temperature ?? 0.7,
-        ...(system ? { system } : {}),
-        messages: chatMessages,
-      }),
-    )
+    const params: Anthropic.MessageCreateParams = {
+      model,
+      max_tokens: options?.maxTokens ?? 4096,
+      temperature: options?.temperature ?? 0.7,
+      ...(system ? { system } : {}),
+      messages: chatMessages,
+    }
 
-    const content = response.content
+    // Adicionar tools se fornecidas
+    if (options?.tools && options.tools.length > 0) {
+      params.tools = options.tools.map((t) => ({
+        name: t.name,
+        description: t.description,
+        input_schema: t.input_schema as Anthropic.Tool.InputSchema,
+      }))
+    }
+
+    const response = await withRetry(() => this.client.messages.create(params))
+
+    const textContent = response.content
       .filter((block): block is Anthropic.TextBlock => block.type === 'text')
       .map((block) => block.text)
       .join('')
+
+    const toolCalls: AIToolCall[] = response.content
+      .filter((block): block is Anthropic.ToolUseBlock => block.type === 'tool_use')
+      .map((block) => ({
+        id: block.id,
+        name: block.name,
+        input: block.input as Record<string, unknown>,
+      }))
 
     const inputTokens = response.usage.input_tokens
     const outputTokens = response.usage.output_tokens
 
     return {
-      content,
+      content: textContent,
       tokensUsed: {
         input: inputTokens,
         output: outputTokens,
         total: inputTokens + outputTokens,
       },
       cost: calculateCost('anthropic', model, inputTokens, outputTokens),
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      stopReason: response.stop_reason === 'tool_use' ? 'tool_use'
+        : response.stop_reason === 'max_tokens' ? 'max_tokens'
+          : 'end_turn',
     }
   }
 
@@ -52,6 +73,13 @@ export class AnthropicProvider implements AIProvider {
   ): Promise<AIResponse> {
     const model = options?.model ?? this.defaultModel
     const { system, chatMessages } = this.splitMessages(messages)
+
+    // Se tem tools, usar generateText (tool_use nao faz streaming bem)
+    if (options?.tools && options.tools.length > 0) {
+      const result = await this.generateText(messages, options)
+      if (result.content) onChunk(result.content)
+      return result
+    }
 
     return withRetry(async () => {
       const stream = this.client.messages.stream({
@@ -82,6 +110,7 @@ export class AnthropicProvider implements AIProvider {
           total: inputTokens + outputTokens,
         },
         cost: calculateCost('anthropic', model, inputTokens, outputTokens),
+        stopReason: 'end_turn' as const,
       }
     })
   }
@@ -96,8 +125,33 @@ export class AnthropicProvider implements AIProvider {
     for (const msg of messages) {
       if (msg.role === 'system') {
         system = msg.content
+      } else if (msg.role === 'tool_result') {
+        // Tool result — formato Anthropic
+        chatMessages.push({
+          role: 'user',
+          content: [{
+            type: 'tool_result',
+            tool_use_id: msg.toolCallId!,
+            content: msg.content,
+          }],
+        })
+      } else if (msg.role === 'assistant' && msg.toolCalls && msg.toolCalls.length > 0) {
+        // Assistant message com tool calls
+        const content: Anthropic.ContentBlockParam[] = []
+        if (msg.content) {
+          content.push({ type: 'text', text: msg.content })
+        }
+        for (const tc of msg.toolCalls) {
+          content.push({
+            type: 'tool_use',
+            id: tc.id,
+            name: tc.name,
+            input: tc.input,
+          })
+        }
+        chatMessages.push({ role: 'assistant', content })
       } else {
-        chatMessages.push({ role: msg.role, content: msg.content })
+        chatMessages.push({ role: msg.role as 'user' | 'assistant', content: msg.content })
       }
     }
 
