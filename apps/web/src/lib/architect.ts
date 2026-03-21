@@ -574,65 +574,90 @@ ${bpContext}${refsContext}`
     { role: 'user', content: `Pesquise sobre: ${session.discovery.purpose}\nPublico: ${session.discovery.audience}\nFormatos: ${session.discovery.targetFormats?.join(', ') ?? 'geral'}` },
   ]
 
-  // Usar web_search tools para pesquisa real na web
-  const result = await provider.generateText(messages, {
-    tools: RESEARCH_TOOLS,
-    maxTokens: 8192,
-  })
+  emitOutput(session.id, 'research', '> Iniciando pesquisa de dominio...\n')
 
-  // Se o modelo quer usar tools, executar loop
-  let finalContent = result.content
-  if (result.toolCalls && result.toolCalls.length > 0) {
+  // Tentar com web_search tools primeiro
+  let finalContent = ''
+  try {
     const { executeToolCall } = await import('@crewflow/engine')
-    const loopMessages = [...messages]
 
-    let currentResult = result
-    const maxRounds = 8
+    emitOutput(session.id, 'research', '> Usando ferramentas de pesquisa web...\n\n')
 
-    for (let round = 0; round < maxRounds; round++) {
-      if (!currentResult.toolCalls || currentResult.toolCalls.length === 0 || currentResult.stopReason !== 'tool_use') break
+    const result = await provider.generateText(messages, {
+      tools: RESEARCH_TOOLS,
+      maxTokens: 8192,
+    })
 
-      // Emitir progresso das pesquisas
-      for (const tc of currentResult.toolCalls) {
-        if (tc.name === 'web_search') {
-          emitOutput(session.id, 'research', `\n🔍 Pesquisando: "${tc.input.query}"...\n`)
-        } else if (tc.name === 'web_fetch') {
-          emitOutput(session.id, 'research', `\n📄 Lendo: ${tc.input.url}...\n`)
+    // Loop de tool calls
+    if (result.toolCalls && result.toolCalls.length > 0 && result.stopReason === 'tool_use') {
+      const loopMessages = [...messages]
+      let currentResult = result
+      const maxRounds = 8
+
+      for (let round = 0; round < maxRounds; round++) {
+        if (!currentResult.toolCalls || currentResult.toolCalls.length === 0 || currentResult.stopReason !== 'tool_use') break
+
+        // Emitir progresso visual
+        for (const tc of currentResult.toolCalls) {
+          if (tc.name === 'web_search') {
+            emitOutput(session.id, 'research', `🔍 Pesquisando: "${tc.input.query}"...\n`)
+          } else if (tc.name === 'web_fetch') {
+            emitOutput(session.id, 'research', `📄 Lendo: ${String(tc.input.url).slice(0, 80)}...\n`)
+          }
         }
-      }
 
-      // Adicionar assistant message com tool calls
-      loopMessages.push({
-        role: 'assistant',
-        content: currentResult.content,
-        toolCalls: currentResult.toolCalls,
-      })
+        // Emitir texto parcial do modelo (se houver)
+        if (currentResult.content) {
+          emitOutput(session.id, 'research', currentResult.content)
+        }
 
-      // Executar tools
-      for (const tc of currentResult.toolCalls) {
-        const toolResult = await executeToolCall(tc)
         loopMessages.push({
-          role: 'tool_result',
-          content: toolResult,
-          toolCallId: tc.id,
+          role: 'assistant',
+          content: currentResult.content,
+          toolCalls: currentResult.toolCalls,
+        })
+
+        // Executar tools
+        for (const tc of currentResult.toolCalls) {
+          const toolResult = await executeToolCall(tc)
+          emitOutput(session.id, 'research', `✅ ${tc.name} concluido\n`)
+          loopMessages.push({
+            role: 'tool_result',
+            content: toolResult,
+            toolCallId: tc.id,
+          })
+        }
+
+        emitOutput(session.id, 'research', `\n> Processando resultados (round ${round + 1})...\n`)
+
+        currentResult = await provider.generateText(loopMessages, {
+          tools: RESEARCH_TOOLS,
+          maxTokens: 8192,
         })
       }
 
-      // Continuar
-      currentResult = await provider.generateText(loopMessages, {
-        tools: RESEARCH_TOOLS,
-        maxTokens: 8192,
-      })
+      finalContent = currentResult.content
+    } else {
+      // Modelo nao quis usar tools — usar resultado direto
+      finalContent = result.content
     }
 
-    finalContent = currentResult.content
+    emitOutput(session.id, 'research', '\n\n---\n\n')
     emitOutput(session.id, 'research', finalContent)
-  } else {
-    emitOutput(session.id, 'research', finalContent)
+  } catch (err) {
+    // Fallback: se tools falharem, usar streaming sem tools
+    console.error('[ARCHITECT] Research with tools failed, falling back to streaming:', err)
+    emitOutput(session.id, 'research', '\n> Pesquisa web indisponivel, gerando com conhecimento do modelo...\n\n')
+
+    const result = await provider.streamText(messages, (chunk) => {
+      emitOutput(session.id, 'research', chunk)
+    }, { maxTokens: 8192 })
+
+    finalContent = result.content
   }
 
   session.research.brief = finalContent
-  emitProgress(session.id, 'research', `Research brief gerado com pesquisa web (${finalContent.length} chars)`)
+  emitProgress(session.id, 'research', `Research brief gerado (${finalContent.length} chars)`)
 }
 
 // ============================================================================
