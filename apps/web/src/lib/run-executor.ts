@@ -135,12 +135,35 @@ export async function executeRun(runId: string): Promise<void> {
   try {
     const prefs = JSON.parse(user.preferences || '{}')
     verboseLogging = prefs.verboseLogging === true
-  } catch { /* */ }
-
-  if (verboseLogging) {
-    wsServer.emitVerboseLog(runId, 'model', `Provider: ${provider}`, undefined, { provider })
-    wsServer.emitVerboseLog(runId, 'context', `Squad: ${run.squad.name} — ${run.squad.agents.length} agents, ${run.squad.pipeline.steps.length} steps`)
+    console.log(`[RUN] Preferences: verboseLogging=${verboseLogging}, betaFeatures=${prefs.betaFeatures}, raw="${user.preferences}"`)
+  } catch (e) {
+    console.log(`[RUN] Failed to parse preferences: ${e}`)
   }
+
+  console.log(`[RUN] Starting run ${runId} — provider=${provider}, verbose=${verboseLogging}, squad="${run.squad.name}", agents=${run.squad.agents.length}, pipelineSteps=${run.squad.pipeline.steps.length}`)
+
+  // Helper seguro para emitir verbose logs (protege contra globalThis stale)
+  const emitVerbose = (
+    type: 'prompt' | 'tokens' | 'model' | 'timing' | 'retry' | 'veto' | 'context',
+    message: string,
+    runStepId?: string,
+    metadata?: Record<string, unknown>,
+  ) => {
+    if (!verboseLogging) return
+    try {
+      if (typeof wsServer.emitVerboseLog === 'function') {
+        wsServer.emitVerboseLog(runId, type, message, runStepId, metadata)
+        console.log(`[RUN] [VERBOSE] [${type}] ${message}`)
+      } else {
+        console.warn(`[RUN] [VERBOSE] emitVerboseLog unavailable — [${type}] ${message}`)
+      }
+    } catch (e) {
+      console.error(`[RUN] [VERBOSE] Error emitting: ${e}`)
+    }
+  }
+
+  emitVerbose('model', `Provider: ${provider}`, undefined, { provider })
+  emitVerbose('context', `Squad: ${run.squad.name} — ${run.squad.agents.length} agents, ${run.squad.pipeline.steps.length} steps`)
 
   // ================================================================
   // MAPEAR AGENTES DO DB → AgentDefinition (com persona rica + tasks)
@@ -425,10 +448,10 @@ export async function executeRun(runId: string): Promise<void> {
 
       wsServer.emitAgentStatus(runId, step.agentId, agent?.name ?? 'Agent', 'working')
 
-      if (verboseLogging && agent) {
+      if (agent) {
         const agentBps = bpMap.get(step.agentId)
         const agentSkills = skillMap.get(step.agentId)
-        wsServer.emitVerboseLog(runId, 'context',
+        emitVerbose('context',
           `Agent "${agent.name}" (${agent.role}) — ${agent.tasks.length} tasks, ${agentSkills?.length ?? 0} skills, ${agentBps?.length ?? 0} best practices`,
           runStepId,
           { execution: step.execution, modelTier: step.modelTier, agentId: step.agentId },
@@ -454,18 +477,16 @@ export async function executeRun(runId: string): Promise<void> {
       wsServer.emitStepComplete(runId, runStepId, output, tokensUsed.total, cost, elapsed)
       wsServer.emitAgentStatus(runId, step.agentId, agent?.name ?? 'Agent', 'done')
 
-      if (verboseLogging) {
-        wsServer.emitVerboseLog(runId, 'tokens',
-          `Input: ${tokensUsed.input} | Output: ${tokensUsed.output} | Total: ${tokensUsed.total}`,
-          runStepId,
-          { input: tokensUsed.input, output: tokensUsed.output, total: tokensUsed.total, cost },
-        )
-        wsServer.emitVerboseLog(runId, 'timing',
-          `Step "${step.label}" completed in ${((elapsed) / 1000).toFixed(1)}s — $${cost.toFixed(4)}`,
-          runStepId,
-          { elapsedMs: elapsed, cost },
-        )
-      }
+      emitVerbose('tokens',
+        `Input: ${tokensUsed.input} | Output: ${tokensUsed.output} | Total: ${tokensUsed.total}`,
+        runStepId,
+        { input: tokensUsed.input, output: tokensUsed.output, total: tokensUsed.total, cost },
+      )
+      emitVerbose('timing',
+        `Step "${step.label}" completed in ${((elapsed) / 1000).toFixed(1)}s — $${cost.toFixed(4)}`,
+        runStepId,
+        { elapsedMs: elapsed, cost },
+      )
 
       await prisma.runStep.update({
         where: { id: runStepId },
@@ -606,26 +627,22 @@ export async function executeRun(runId: string): Promise<void> {
         },
       }).catch(() => {})
 
-      if (verboseLogging) {
-        wsServer.emitVerboseLog(runId, 'veto',
-          `Veto violations: ${violations.join(' | ')}`,
-          runStepId,
-          { violations },
-        )
-      }
+      emitVerbose('veto',
+        `Veto violations: ${violations.join(' | ')}`,
+        runStepId,
+        { violations },
+      )
     },
 
     onToolCall: (stepId, toolName, input, result) => {
       const runStepId = runStepMap.get(stepId) ?? stepId
       console.log(`[ENGINE] Tool "${toolName}" called with:`, JSON.stringify(input).slice(0, 100))
 
-      if (verboseLogging) {
-        wsServer.emitVerboseLog(runId, 'context',
-          `Tool: ${toolName}(${JSON.stringify(input).slice(0, 100)}) → ${result.slice(0, 150)}`,
-          runStepId,
-          { toolName, input, resultPreview: result.slice(0, 200) },
-        )
-      }
+      emitVerbose('context',
+        `Tool: ${toolName}(${JSON.stringify(input).slice(0, 100)}) → ${result.slice(0, 150)}`,
+        runStepId,
+        { toolName, input, resultPreview: result.slice(0, 200) },
+      )
     },
   })
 

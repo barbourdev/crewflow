@@ -27,6 +27,8 @@ export interface AgentExecutorOptions {
   onToolCall?: (toolName: string, input: Record<string, unknown>, result: string) => void
   /** Override de modelo (ex: model tier fast → haiku, powerful → sonnet) */
   modelOverride?: string
+  /** Override de maxTokens (default 4096, content generation precisa de 8192+) */
+  maxTokens?: number
 }
 
 interface ExecutionResult {
@@ -122,7 +124,7 @@ export class AgentExecutor {
     if (options.previousOutput) {
       messages.push({
         role: 'user',
-        content: `Contexto do agente anterior:\n\n${options.previousOutput}\n\n---\n\nAgora execute sua tarefa com base no input abaixo:\n\n${input}`,
+        content: `## Contexto do agente anterior (USE ESTE CONTEUDO como base principal — NAO pesquise na web o que ja esta aqui):\n\n${options.previousOutput}\n\n---\n\nAgora execute sua tarefa com base no contexto acima e no input abaixo:\n\n${input}`,
       })
     } else {
       messages.push({ role: 'user', content: input })
@@ -190,6 +192,7 @@ export class AgentExecutor {
     const generateOptions = {
       ...(options.tools ? { tools: options.tools } : {}),
       ...(options.modelOverride ? { model: options.modelOverride } : {}),
+      ...(options.maxTokens ? { maxTokens: options.maxTokens } : {}),
     }
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -432,11 +435,12 @@ Use-as quando precisar de informacoes atualizadas ou dados externos.
 
 Tools: ${options.tools.map((t) => `\`${t.name}\` — ${t.description}`).join('\n')}
 
-IMPORTANTE: Use as tools de pesquisa quando:
-- Precisar de informacoes atualizadas (noticias, tendencias, dados recentes)
-- O input mencionar topicos que requerem pesquisa
-- Voce nao tiver certeza sobre um fato especifico
-- Precisar de dados reais (estatisticas, precos, eventos)`)
+IMPORTANTE — Regras de uso:
+- Use tools APENAS quando informacoes do contexto anterior NAO forem suficientes
+- Se voce recebeu um research brief ou output de outro agente, USE ESSE CONTEUDO — nao pesquise novamente
+- Pesquise apenas para VALIDAR dados especificos ou buscar informacoes que NAO estao no contexto
+- Maximo 2-3 pesquisas por execucao — seja preciso nas queries
+- NAO repita pesquisas que o agente anterior ja fez`)
     }
 
     // === STRUCTURED OUTPUT ===

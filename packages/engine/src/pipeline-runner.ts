@@ -242,6 +242,9 @@ export class PipelineRunner {
         // Model tier → model override
         const modelOverride = this.resolveModelTier(step.modelTier, context.provider)
 
+        // MaxTokens — content/design steps precisam de mais tokens (8192+)
+        const maxTokens = this.resolveMaxTokens(agent, step)
+
         const result = await this.agentExecutor.execute(agent, context.input, {
           provider: context.provider,
           previousOutput: lastOutput,
@@ -252,13 +255,15 @@ export class PipelineRunner {
           contextData: stepContextData.length > 0 ? stepContextData : undefined,
           outputExample: step.outputExample,
           onStream: (chunk) => this.callbacks.onStepOutput?.(step, chunk),
-          // Tools — web_search, web_fetch, etc.
-          tools: context.tools,
+          // Tools — so para agentes de pesquisa/analise (researchers, analysts)
+          // Outros agentes devem usar o contexto passado pelo agente anterior
+          tools: this.shouldHaveTools(agent, step) ? context.tools : undefined,
           onToolCall: this.callbacks.onToolCall
             ? (toolName, input, result) => this.callbacks.onToolCall!(step.id, toolName, input, result)
             : undefined,
-          // Model tier override
+          // Model tier override + maxTokens
           modelOverride,
+          maxTokens,
           // Inline questions — agente pode perguntar ao usuario mid-execution
           onInlineQuestion: this.callbacks.onHumanInputRequest
             ? async (question: string, agentName: string) => {
@@ -356,6 +361,59 @@ export class PipelineRunner {
     return new Promise<void>((resolve) => {
       this.pausePromise = { resolve }
     })
+  }
+
+  /**
+   * Determina maxTokens baseado no tipo de agente/step.
+   * Content creators e designers precisam de mais tokens para outputs longos.
+   */
+  private resolveMaxTokens(agent: AgentDefinition, _step: StepDefinition): number {
+    const role = agent.role.toLowerCase()
+
+    // Designers gerando HTML/visual — precisam de MUITO espaco
+    const designRoles = ['design', 'visual', 'render', 'image', 'layout']
+    if (designRoles.some((r) => role.includes(r))) return 16000
+
+    // Content creators — outputs longos (carouseis, artigos)
+    const contentRoles = ['creator', 'writer', 'copy', 'content', 'gancho', 'redator']
+    if (contentRoles.some((r) => role.includes(r))) return 8192
+
+    // Reviewers — analises detalhadas
+    const reviewRoles = ['review', 'revis', 'veredito', 'quality']
+    if (reviewRoles.some((r) => role.includes(r))) return 8192
+
+    // Researchers — briefs extensos
+    const researchRoles = ['research', 'pesquis', 'analyst']
+    if (researchRoles.some((r) => role.includes(r))) return 8192
+
+    // Default
+    return 4096
+  }
+
+  /**
+   * Determina se um agente deve ter acesso a tools de pesquisa.
+   * Apenas researchers, analysts e reviewers (para validacao) recebem tools.
+   */
+  private shouldHaveTools(agent: AgentDefinition, step: StepDefinition): boolean {
+    const role = agent.role.toLowerCase()
+    const execution = step.execution
+
+    // Subagents (pesquisa) sempre tem tools
+    if (execution === 'subagent') return true
+
+    // Researchers e analysts tem tools
+    const researchRoles = ['research', 'pesquis', 'analyst', 'analista', 'investigat']
+    if (researchRoles.some((r) => role.includes(r))) return true
+
+    // Reviewers tem tools (para validar fontes), mas com cautela
+    const reviewRoles = ['review', 'revis', 'veredito', 'quality']
+    if (reviewRoles.some((r) => role.includes(r))) return true
+
+    // Step com skillRefs que incluem web_search
+    if (step.skillRefs?.some((s) => s.toLowerCase().includes('search'))) return true
+
+    console.log(`[ENGINE] Agent "${agent.name}" (${role}) — tools DISABLED (not a researcher/reviewer)`)
+    return false
   }
 
   /**
